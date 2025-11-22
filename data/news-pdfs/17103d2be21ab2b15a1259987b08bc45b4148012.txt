@@ -1,0 +1,224 @@
+FYI
+> Begin forwarded message:
+>
+> From: "The Stansberry Digest" <customerservice@exct.stansberryresearch.com>
+> Subject: Red Flags From America's Real Economy
+> Date: November 18, 2025 at 4:07:46 PM MST
+> To: <ron.shane3@gmail.com>
+> Reply-To: "No Reply" <reply-fe87117670620c7870-37250_HTML-256682312-7296493-2@exct.stansberryresearch.com>
+>
+>
+>
+> A warning from a major retailer... More sour labor-market data... A 'quiet' hiring freeze... AI could be killing entry-level jobs faster than expected... What wins when the digital economy breaks...
+>
+> A red flag from 'real economy' earnings season...
+>
+> A lot of our earnings season coverage this year has focused on the Magnificent Seven and other AI-related companies. And for good reason... the major stock market indexes are heavily concentrated in these names.
+>
+> They're far from the only quarterly reports we've been watching, though. This week, a handful of important "real economy" businesses shared their earnings, and home-improvement giant Home Depot's (HD) report has our interest today...
+>
+> Home Depot is a bellwether for the economy, as the company's performance is directly tied to residential real estate and U.S. consumer activity.
+>
+> The news wasn't great. Home Depot's earnings fell short of estimates, though revenue came in ahead of expectations. The company's outlook and management commentary sparked the most worries, sending shares down 6% today.
+>
+> Home Depot now sees revenue growing about 3% in the 12 months ending January 31, versus its previous outlook of 2.8% growth.
+>
+> On the surface, that seems like a positive thing. But Home Depot is including a $2 billion boost from a recent acquisition (building-products distributor GMS) that wasn't previously included in guidance. That $2 billion will add about 1.2% to its annual sales growth. That means Home Depot's existing business grew more slowly than expected.
+>
+> The earnings picture is even worse...
+>
+> Home Depot now expects earnings per share to fall 5% in its fiscal year, double Wall Street's estimated drop. That would mark the third straight annual decline in Home Depot's earnings.
+>
+> The consumer is fading...
+>
+> In an interview with CNBC, Home Depot Chief Financial Officer Richard McPhail said that the company had expected the ongoing decline in mortgage rates to spur folks to fix up homes they were selling or buying.
+>
+> But the rebound never materialized, McPhail said. As he told CNBC...
+>
+> When we set guidance, we had anticipated that demand would begin to accelerate gradually in the back half of the year as interest rates and mortgage rates eased. But what we saw was that ongoing consumer uncertainty and continued pressure in housing are disproportionately impacting home improvement demand.
+>
+> Again, that wasn't the only bad news... McPhail also said, "At this point, it's hard to identify near-term catalysts that would lead to acceleration."
+>
+> So folks are pulling back on spending on home improvement. And Home Depot (the fifth-largest U.S. retailer by revenue) doesn't know how or when that trend will change.
+>
+> This isn't an encouraging sign if you're looking for a read on the U.S. economy and consumers. The major U.S. indexes were mostly down today, with the Dow Jones Industrial Average and tech-heavy Nasdaq Composite Index losing about 1%. The S&P 500 Index was down for the fourth straight day.
+>
+> Home Depot's report isn't the last corporate update we'll get on the consumer this week. Target (TGT) reports tomorrow morning, and Walmart (WMT) reports Thursday. As big-box retailers, those companies will give a wider look into how the consumer is doing.
+>
+> The first post-shutdown 'official' labor-market data...
+>
+> Ever since the start of the government shutdown on October 1, Wall Street has been "flying blind" when it comes to official economic data.
+>
+> September jobs and inflation reports were delayed, and the White House has even said that October's data may not be released at all.
+>
+> But early this morning, with little fanfare, the Department of Labor released its weekly jobless-claims data for the first time since the shutdown. In the week ending October 18 – yes, a month ago – 232,000 people filed for initial unemployment insurance.
+>
+> And continuing claims – which represent folks filing for unemployment for multiple weeks – hit 1.957 million. That is the highest level since early August... And it's about as high as any other week since 2021.
+>
+> These aren't earth-shattering numbers. But we finally have government jobs data again, and it doesn't paint a pretty picture.
+>
+> As for the 'unofficial' jobs data...
+>
+> Payroll processor ADP continues to release its four-week rolling average of private payrolls. Last week's update, as we reported, showed that private employers shed an average of 11,250 jobs per week in the four weeks ending October 25.
+>
+> Today, ADP's data showed that private employers shed an average of 2,500 jobs per week in the four weeks ending November 1. So, all in all, ADP's "NER Pulse" estimates that private payrolls declined by about 10,000 in October, a far cry from the 42,000 additions it originally reported for the month.
+>
+> ADP's monthly survey is conducted in the first two weeks of the month. So we can only assume that October's hiring started strong but got worse throughout the month – to the point where this survey showed private businesses cutting jobs overall.
+>
+> Pair that with the jump in jobless claims, and we get a clear picture that the labor market is still weakening.
+>
+> The labor market's 'quiet time' – chalked up to AI...
+>
+> Many folks have been talking recently about AI's role in the labor market. And over the past two days, we've seen two high-profile national television interviews on the subject...
+>
+> In an interview with 60 Minutes that aired on Sunday evening, Dario Amodei – CEO of AI startup Anthropic, OpenAI's smaller rival – reiterated his concerns about how AI will impact the unemployment rate.
+>
+> In the past, Amodei has said that AI could push the unemployment rate to 10% to 20% within the next five years. And he has also said that AI could wipe out half of all entry-level jobs. He reiterated why in Sunday's interview on CBS...
+>
+> Well, if we look at entry-level consultants, lawyers, financial professionals, you know, many of, kind of the white-collar service industries, a lot of what they do, you know, AI models are already quite good at. And without intervention, it's hard to imagine that there won't be some significant job impact there.
+>
+> Even more concerning, Amodei said that he believes these job losses will come quicker than previous technological revolutions, leaving less time for folks to change career paths.
+>
+> Then, in an interview on CNBC yesterday, the White House's National Economic Council Director Kevin Hassett said that AI could force some "quiet time" in the job market. Put another way, AI will cut down on hiring in the near term.
+>
+> And like Amodei, Hassett sees entry-level jobs feeling the greatest impact. As Hassett said in the CNBC interview...
+>
+> Firms are finding that AI is making their workers so productive that they don't necessarily have to hire the new kids out of college and so on.
+>
+> That's bad news for college grads...
+>
+> In August, the most recent jobs data released by the Bureau of Labor Statistics (until September's release this Thursday), showed that 9.3% of college graduates aged 20 and 24 hit are out of work.
+>
+> That's the highest unemployment rate for that demographic since July 2021 – when the economy was still reeling from the COVID-19 pandemic. If you exclude the COVID period, it's the highest level since July 2014.
+>
+> AI could make this much worse...
+>
+> Every year, 3.3 million job openings require a bachelor's degree, according to the Bureau of Labor Statistics. These include positions like market-research analysts, accountants and auditors, and marketing specialists.
+>
+> With more than 2 million college grads entering the workforce every year, there have typically been plenty of openings for graduates into these white-collar careers to find jobs.
+>
+> But now that number could be cut in half (based on Amodei's estimate). There may only be between 1.5 million and 1.7 million job openings for the same 2 million graduates.
+>
+> If that ends up being the case, it's easy to see how Amodei got to his 10% to 20% estimate – even if it is just for this one demographic.
+>
+> As we've shared before, AI has the potential to open up new job opportunities that we just can't see yet. But in the meantime, it looks like the harm AI causes in the labor market will take center stage.
+>
+> Put all of this together, and the environment sure has the whiff of recession.
+>
+> Technology caused other problems this morning...
+>
+> Cloud-software provider Cloudflare (NET) helps secure traffic for about 20% of the Internet. This morning, it suffered an outage that disrupted online services all over the world.
+>
+> One victim was our scheduled free broadcast featuring expert natural resources investor Rick Rule. With our website running slowly, we rescheduled this presentation to tonight at 8 p.m. Eastern time.
+>
+> We apologize for the inconvenience, but hopefully you get a chance to watch the debut tonight or a replay in the days ahead without interruption. We didn't want to risk you missing out on anything, given the subject and opportunity that Rick and a special guest plan to talk about.
+>
+> This morning's tech disruption underscores the importance of Rick's message...
+>
+> He's going to discuss the value in real assets and companies that don't live solely in the digital world but are tied to resources in the ground. This outage is proof of how unexpectedly the lights can go out all over our country.
+>
+> It's all part of the urgent story that Rick wants to get in front of you during "The Stocks That Save America Summit," which – again – is now airing tonight at 8 pm. Eastern time.
+>
+> He's also going to discuss how the U.S. government is using taxpayer funds to buy shares of select stocks, sending them surging, sometimes overnight... and why this is only the beginning of a story that could be the biggest in the market in the coming decade.
+>
+> Click here to learn more and register now < to make sure you don't miss anything.
+>
+> This week's Stansberry Investor Hour features Nick Hodge, another expert natural resource investor. Nick talks about why the "smart money" is interested in the space now, details how the U.S. government is scrambling to reverse decades of outsourcing, and offers plenty more, like his outlook for gold's price and the ticker of a small data-tracking company he's bullish on.
+>
+> <
+> Click here to watch our entire interview < on our YouTube page... or listen to the audio version on our website < or wherever you listen to podcasts, like Apple Podcasts, Spotify, or Audible. Just search "Stansberry Investor Hour" and subscribe to get more episodes when they go live.
+> New 52-week highs (as of 11/17/25): Amgen (AMGN), ProShares Ultra Nasdaq Biotechnology (BIB), Alpha Architect 1-3 Month Box Fund (BOXX), Enel (ENLAY), Expeditors International of Washington (EXPD), Freehold Royalties (FRU.TO), iShares Biotechnology Fund (IBB), and Omega Healthcare Investors (OHI).
+>
+> In today's mail, more feedback on the idea of 50-year mortgages... Do you have a comment or question? As always, e-mail us at feedback@stansberryresearch.com <mailto:feedback@stansberryresearch.com>.
+>
+> "The introduction of a 50-year mortgage makes me think about Japan's use of 50-year debt. I wouldn't be surprised to hear about 50-year Treasury bonds in the near future. That would open the door for kicking the federal debt even further down the road..." – Subscriber Rodger G.
+>
+> All the best,
+>
+> Nick Koziol and Corey McLaughlin
+> Baltimore, Maryland
+> November 18, 2025
+>
+> Stansberry Research Top 10 Open Recommendations
+> Top 10 highest-returning open stock positions across all Stansberry Research portfolios. Returns represent the total return from the initial recommendation.
+>
+> Investment	Buy Date	Return	Publication	Analyst
+> MSFT
+> Microsoft	02/10/12	1,634.4%	Stansberry's Investment Advisory	Porter
+> MSFT
+> Microsoft	11/11/10	1,544.5%	Retirement Millionaire	Doc
+> ADP
+> Automatic Data Processing	10/09/08	935.6%	Extreme Value	Ferris
+> BRK.B
+> Berkshire Hathaway	04/01/09	792.7%	Retirement Millionaire	Doc
+> WRB
+> W.R. Berkley	03/15/12	705.7%	Stansberry's Investment Advisory	Porter
+> GOOGL
+> Alphabet	12/15/16	602.1%	Retirement Millionaire	Doc
+> ALS-T
+> Altius Minerals	03/26/09	516.2%	Extreme Value	Ferris
+> AFG
+> American Financial	10/11/12	509.4%	Stansberry's Investment Advisory	Porter
+> HSY
+> Hershey	12/07/07	462.9%	Stansberry's Investment Advisory	Porter
+> AXP
+> American Express	08/04/16	462.3%	Stansberry's Investment Advisory	Porter
+> Please note: Securities appearing in the Top 10 are not necessarily recommended buys at current prices. The list reflects the best-performing positions currently in the model portfolio of any Stansberry Research publication. The buy date reflects when the editor recommended the investment in the listed publication, and the return shows its performance since that date. To learn if a security is still a recommended buy today, you must be a subscriber to that publication and refer to the most recent portfolio.
+> Top 10 Totals
+> 5	Stansberry's Investment Advisory	Porter
+> 3	Retirement Millionaire	Doc
+> 2	Extreme Value	Ferris
+> Top 5 Crypto Capital Open Recommendations
+> Top 5 highest-returning open positions in the Crypto Capital model portfolio
+>
+> Investment	Buy Date	Return	Publication	Analyst
+> BTC/USD
+> Bitcoin	11/27/18	2,348.9%	Crypto Capital	Wade
+> WSTETH/USD
+> Wrapped Staked Ethereum	12/07/18	2,307.9%	Crypto Capital	Wade
+> ONE/USD
+> Harmony	12/16/19	1,039.8%	Crypto Capital	Wade
+> POL/USD
+> Polygon	02/26/21	655.6%	Crypto Capital	Wade
+> QRL/USD
+> Quantum Resistant Ledger	01/19/21	436.9%	Crypto Capital	Wade
+> Please note: Securities appearing in the Top 5 are not necessarily recommended buys at current prices. The list reflects the best-performing positions currently in the Crypto Capital model portfolio. The buy date reflects when the recommendation was made, and the return shows its performance since that date. To learn if it's still a recommended buy today, you must be a subscriber and refer to the most recent portfolio.
+> Stansberry Research Hall of Fame
+> Top 10 all-time, highest-returning closed positions across all Stansberry portfolios
+>
+> Investment	Duration	Gain	Publication	Analyst
+> Nvidia (NVDA)^*	5.96 years	1,466%	Venture Tech.	Lashmet
+> Microsoft (MSFT)^	12.74 years	1,185%	Retirement Millionaire	Doc
+> Inovio Pharma. (INO)^	1.01 years	1,139%	Venture Tech.	Lashmet
+> Rocket Lab (RKLB)^	2.35 years	1,034%	Venture Tech.	Lashmet
+> Seabridge Gold (SA)^	4.20 years	995%	Sjug Conf.	Sjuggerud
+> Berkshire Hathaway (BRK-B)^	16.13 years	800%	Retirement Millionaire	Doc
+> Intellia Therapeutics (NTLA)	1.95 years	775%	Amer. Moonshots	Root
+> Rite Aid 8.5% bond	4.97 years	773%	True Income	Williams
+> PNC Warrants (PNC-WS)	6.16 years	706%	True Wealth Systems	Sjuggerud
+> Maxar Technologies (MAXR)^	1.90 years	691%	Venture Tech.	Lashmet
+> ^ These gains occurred with a partial position in the respective stocks.
+> * Editor Dave Lashmet closed the first leg of this Nvidia position in November 2016 for a gain of about 108%. Then, he closed the second leg in July 2020 for a 777% return. And finally, in May 2022, he booked a 1,466% return on the final leg. Subscribers who followed his advice on Nvidia could've recorded a total weighted average gain of more than 600%.
+> Stansberry Research Crypto Hall of Fame
+> Top 5 highest-returning closed positions in the Crypto Capital model portfolio
+>
+> Investment	Duration	Gain	Publication	Analyst
+> Band Protocol (BAND)	0.31 years	1,169%	Crypto Capital	Wade
+> Terra (LUNA)	0.41 years	1,166%	Crypto Capital	Wade
+> Polymesh (POLYX)	3.84 years	1,157%	Crypto Capital	Wade
+> Frontier (FRONT)	0.09 years	979%	Crypto Capital	Wade
+> Binance Coin (BNB)	1.78 years	963%	Crypto Capital	Wade
+> You have received this e-mail as part of your subscription to Stansberry Digest. If you no longer want to receive e-mails from Stansberry Digest click here <
+>
+> Published by Stansberry Research.
+>
+> You're receiving this e-mail at ron.shane3@gmail.com <mailto:ron.shane3@gmail.com>. Stansberry Research welcomes comments or suggestions at feedback@stansberryresearch.com <mailto:feedback@stansberryresearch.com>. This address is for feedback only. For questions about your account or to speak with customer service, call 888-261-2693 (U.S.) or 443-839-0986 (international) Monday-Friday, 9 a.m.-5 p.m. Eastern time. Or e-mail info@stansberryresearch.com <mailto:info@stansberryresearch.com>. Please note: The law prohibits us from giving personalized financial advice.
+>
+> © 2025 Stansberry Research. All rights reserved. Any reproduction, copying, or redistribution, in whole or in part, is prohibited without written permission from Stansberry Research, 1125 N Charles St, Baltimore, MD 21201 or stansberryresearch.com <
+>
+> Any brokers mentioned constitute a partial list of available brokers and is for your information only. Stansberry Research does not recommend or endorse any brokers, dealers, or investment advisors.
+>
+> Stansberry Research forbids its writers from having a financial interest in any security they recommend to our subscribers. All employees of Stansberry Research (and affiliated companies) must wait 24 hours after an investment recommendation is published online – or 72 hours after a direct mail publication is sent – before acting on that recommendation.
+>
+> This work is based on SEC filings, current events, interviews, corporate press releases, and what we've learned as financial journalists. It may contain errors, and you shouldn't make any investment decision based solely on what you read here. It's your money and your responsibility.
+>

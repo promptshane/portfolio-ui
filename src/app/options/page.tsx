@@ -1,0 +1,15 @@
+"use client";
+import Header from "../components/header";
+
+export default function OptionsPage() {
+  return (
+    <main className="min-h-screen bg-neutral-900 text-white px-6 py-8">
+      <Header title="Options" />
+      <div className="bg-neutral-800 rounded-2xl p-6 border border-neutral-700">
+        <p className="text-gray-300">
+          Placeholder — options screener, probability/payoff analytics, and contracts finder.
+        </p>
+      </div>
+    </main>
+  );
+}

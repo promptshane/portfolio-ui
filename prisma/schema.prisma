@@ -1,0 +1,219 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/*
+  Notes:
+  - Added `hashedPassword String?` for the Settings → Change Password flow (kept legacy `password` too).
+  - WatchlistItem keeps the (userId, symbol) unique constraint you specified.
+  - Added `colorPalette ColorPalette @default(classic)` to persist the UI color scheme (supports new palettes).
+*/
+
+model User {
+  id             Int          @id @default(autoincrement())
+  email          String       @unique
+  username       String       @unique
+  preferredName  String?
+
+  // Canonical password column used by the API route
+  hashedPassword String?
+
+  // Legacy column kept for safety (optional). You can drop later after backfilling.
+  password       String?
+
+  // User UI preferences
+  colorPalette   ColorPalette @default(classic)
+  verifiedEmailsJson String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  holdings      Holding[]
+  watchlist     WatchlistItem[]
+  questions     NewsQuestion[]
+  articleViews  NewsArticleView[]   // <-- back-relation for NewsArticleView.user
+
+  // Social graph
+  following     Follow[]     @relation("UserFollowing")
+  followers     Follow[]     @relation("UserFollowers")
+
+  // Notes reposts
+  notesReposts  NotesRepost[]
+
+  oversees      OverseerLink[] @relation("Overseer")
+  overseenBy    OverseerLink[] @relation("Overseen")
+  newsBatchJobs NewsBatchJob[]
+}
+
+model Holding {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  sym       String
+  shares    Float
+  avgCost   Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, sym])
+  @@map("Holding")
+}
+
+model WatchlistItem {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  symbol    String
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, symbol])
+  @@map("WatchlistItem")
+}
+
+model NewsArticle {
+  id               String   @id
+  originalFilename String
+  uploadedAt       DateTime @default(now())
+  pdfPath          String
+  hasSummary       Boolean  @default(false)
+
+  title            String?
+  author           String?
+  datePublished    DateTime?
+  summaryText      String?
+  keyPointsJson    String?
+  actionsJson      String?
+  tickersJson      String?
+  summarizedAt     DateTime?
+  qaHistoryJson    String?
+
+  questions        NewsQuestion[]
+  views            NewsArticleView[]   // <-- back-relation for NewsArticleView.article
+
+  // Notes reposts for this article
+  notesReposts     NotesRepost[]
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model NewsQuestion {
+  id        Int         @id @default(autoincrement())
+  article   NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleId String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+
+  question  String
+  answer    String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([articleId, userId, createdAt(sort: Desc)])
+  @@map("NewsQuestion")
+}
+
+model NewsArticleView {
+  id            Int         @id @default(autoincrement())
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        Int
+  article       NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleId     String
+  firstViewedAt DateTime    @default(now())
+  lastViewedAt  DateTime    @updatedAt
+
+  @@unique([userId, articleId])
+  @@map("NewsArticleView")
+}
+
+// New: social graph (followers / following)
+model Follow {
+  id           Int   @id @default(autoincrement())
+  follower     User  @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  followerId   Int
+  following    User  @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+  followingId  Int
+  createdAt    DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@map("Follow")
+}
+
+// New: reposts into Notes (formerly Hub)
+model NotesRepost {
+  id        Int         @id @default(autoincrement())
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  article   NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleId String
+
+  comment   String
+  // JSON-encoded array of tickers, mirroring the existing NewsArticle JSON approach
+  tickersJson String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, articleId])
+  @@index([articleId])
+  @@map("HubRepost")
+}
+
+model OverseerLink {
+  id          Int   @id @default(autoincrement())
+  overseer    User  @relation("Overseer", fields: [overseerId], references: [id], onDelete: Cascade)
+  overseerId  Int
+  target      User  @relation("Overseen", fields: [targetId], references: [id], onDelete: Cascade)
+  targetId    Int
+  createdAt   DateTime @default(now())
+
+  @@unique([overseerId, targetId])
+  @@map("OverseerLink")
+}
+
+model NewsBatchJob {
+  id         Int              @id @default(autoincrement())
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     Int
+  type       NewsBatchType
+  status     NewsBatchStatus  @default(pending)
+  total      Int              @default(0)
+  completed  Int              @default(0)
+  summary    String?
+  criteriaJson String?
+  lastError  String?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@index([userId, status, createdAt])
+}
+
+enum ColorPalette {
+  classic
+  icy
+  violet
+  luxe
+  blueAmberTeal
+  crimsonVioletMint
+}
+
+enum NewsBatchType {
+  summarize
+  resummarize
+  refresh
+}
+
+enum NewsBatchStatus {
+  pending
+  running
+  completed
+  failed
+}

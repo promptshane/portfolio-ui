@@ -23,4 +23,142 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  caret-color: transparent;
+}
+
+input,
+textarea,
+select,
+[contenteditable="true"] {
+  caret-color: auto;
+}
+
+/* Semantic palette tokens */
+.theme-default {
+  --good-300: #86efac;
+  --good-400: #4ade80;
+  --good-500: #22c55e;
+
+  --bad-400: #f87171;
+  --bad-500: #ef4444;
+
+  --mid-400: #facc15;
+  --mid-500: #eab308;
+
+  --highlight-400: var(--good-400);
+  --highlight-500: var(--good-500);
+
+  --good: var(--good-500);
+  --bad: var(--bad-500);
+  --mid: var(--mid-500);
+  --highlight: var(--highlight-500);
+}
+
+.theme-icy {
+  --good-300: #7dd3fc; /* light blue */
+  --good-400: #38bdf8;
+  --good-500: #0ea5e9;
+
+  --bad-400: #f472b6;  /* pink */
+  --bad-500: #ec4899;
+
+  --mid-400: #ffffff;  /* white */
+  --mid-500: #ffffff;
+
+  --highlight-400: var(--good-400);
+  --highlight-500: var(--good-500);
+
+  --good: var(--good-500);
+  --bad: var(--bad-500);
+  --mid: var(--mid-500);
+  --highlight: var(--highlight-500);
+}
+
+/* Violet Scale (Electric / Muted / Dark) */
+.theme-violet {
+  --good-300: #f0dbff;
+  --good-400: #d78dff;
+  --good-500: #b026ff;  /* electric violet */
+
+  --mid-400: #b5a1e8;
+  --mid-500: #9b84d6;
+
+  --bad-400: #2d0f45;
+  --bad-500: #14011f;
+
+  --highlight-400: var(--good-400);
+  --highlight-500: var(--good-500);
+
+  --good: var(--good-500);
+  --bad: var(--bad-500);
+  --mid: var(--mid-500);
+  --highlight: var(--highlight-500);
+}
+
+
+/* Luxe (Gold / Silver / Wine Red) */
+.theme-luxe {
+  --good-300: #ffe08a;   /* gold light */
+  --good-400: #facc15;   /* gold vivid */
+  --good-500: #d4af37;   /* metallic gold */
+
+  --mid-400: #e5e7eb;    /* silver light */
+  --mid-500: #c0c0c0;    /* silver */
+
+  --bad-400: #991b1b;    /* wine */
+  --bad-500: #7f1d1d;    /* deeper wine */
+
+  --highlight-400: var(--good-400);
+  --highlight-500: var(--good-500);
+
+  --good: var(--good-500);
+  --bad: var(--bad-500);
+  --mid: var(--mid-500);
+  --highlight: var(--highlight-500);
+}
+
+/* Colorblind-safe blue / amber / teal */
+.theme-blueAmberTeal {
+  --good-300: #7fd7c7;
+  --good-400: #48c3b3;
+  --good-500: #1fa187;   /* teal */
+
+  --mid-300: #ffe59c;
+  --mid-400: #ffd052;
+  --mid-500: #f2b705;    /* amber */
+
+  --bad-300: #7b90af;
+  --bad-400: #60799e;
+  --bad-500: #4c6a92;    /* blue-gray */
+
+  --highlight-400: var(--good-400);
+  --highlight-500: var(--good-500);
+
+  --good: var(--good-500);
+  --bad: var(--bad-500);
+  --mid: var(--mid-500);
+  --highlight: var(--highlight-500);
+}
+
+/* Crimson / Violet / Mint */
+.theme-crimsonVioletMint {
+  --good-300: #8ef0be;
+  --good-400: #5fdc9c;
+  --good-500: #2ecc71;   /* mint */
+
+  --mid-300: #bba9ff;
+  --mid-400: #9b85ff;
+  --mid-500: #7b61ff;    /* violet */
+
+  --bad-300: #f07f86;
+  --bad-400: #df4a52;
+  --bad-500: #c81d25;    /* crimson */
+
+  --highlight-400: var(--good-400);
+  --highlight-500: var(--good-500);
+
+  --good: var(--good-500);
+  --bad: var(--bad-500);
+  --mid: var(--mid-500);
+  --highlight: var(--highlight-500);
 }

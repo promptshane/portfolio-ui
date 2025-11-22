@@ -1,103 +1,201 @@
-import Image from "next/image";
+// src/app/page.tsx
+"use client";
 
-export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import Header from "./components/header";
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+export default function HomePage() {
+  const [name, setName] = useState<string>("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const cacheName = (value: string) => {
+      try {
+        window.localStorage.setItem("profile:preferredName", value);
+      } catch {
+        /* ignore quota */
+      }
+    };
+
+    async function hydrateName() {
+      const apply = (value?: string | null) => {
+        const trimmed = (value ?? "").trim();
+        return trimmed || null;
+      };
+      try {
+        const res = await fetch("/api/user/profile", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          const fromProfile = apply(data?.preferredName) || apply(data?.username);
+          if (!cancelled && fromProfile) {
+            setName(fromProfile);
+            cacheName(fromProfile);
+            return;
+          }
+        }
+      } catch {
+        /* fall back */
+      }
+      try {
+        const sessRes = await fetch("/api/auth/session", { cache: "no-store" });
+        if (!sessRes.ok) throw new Error("session fetch failed");
+        const session = await sessRes.json();
+        const fallback =
+          apply(session?.user?.preferredName) ||
+          apply(session?.user?.username) ||
+          apply(session?.user?.name) ||
+          "there";
+        if (!cancelled) {
+          const finalName = fallback ?? "there";
+          setName(finalName);
+          cacheName(finalName);
+        }
+      } catch {
+        if (!cancelled) setName("there");
+      }
+    }
+    void hydrateName();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep the same thin hover border; add a thicker outline briefly on click (active)
+  const tileClass =
+    "bg-neutral-800 rounded-2xl p-6 border border-neutral-700 hover:border-[var(--highlight-400)] active:shadow-[0_0_0_2px_var(--highlight-400)] transition-[border-color,box-shadow]";
+
+  // Locked tiles: use the "bad" theme color for hover/active highlight (to match the lock)
+  const lockedTileClass =
+    "bg-neutral-800 rounded-2xl p-6 border border-neutral-700 hover:border-[var(--bad-400)] active:shadow-[0_0_0_2px_var(--bad-400)] transition-[border-color,box-shadow]";
+
+  // Theme-colored lock badge using the “bad” highlight color (down move)
+  const LockBadge = () => (
+    <div
+      className="absolute top-3 right-3 h-6 w-6 rounded-full bg-[color:var(--bad-400)/0.12] text-[var(--bad-400)] ring-1 ring-[color:var(--bad-400)/0.45] flex items-center justify-center"
+      aria-hidden
+    >
+      {/* Filled lock uses currentColor so it adopts the theme */}
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <path d="M12 2a5 5 0 00-5 5v3H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2h-1V7a5 5 0 00-5-5zm-3 8V7a3 3 0 016 0v3H9z" />
+      </svg>
     </div>
+  );
+
+  return (
+    <main className="min-h-screen bg-neutral-900 text-white px-6 py-8">
+      <Header title="Home" />
+      <div className="mb-8">
+        <h1 className="text-3xl font-semibold">Welcome, {name}</h1>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        {/* Top row */}
+        <Link href="/portfolio" className={tileClass}>
+          <div className="text-xl font-medium">Portfolio</div>
+          <div className="text-neutral-400 text-sm mt-1">
+            View positions &amp; performance
+          </div>
+        </Link>
+
+        <Link href="/watchlist" className={tileClass}>
+          <div className="text-xl font-medium">Watchlist</div>
+          <div className="text-neutral-400 text-sm mt-1">
+            Track tickers you care about
+          </div>
+        </Link>
+
+        <Link href="/analysis" className={tileClass}>
+          <div className="text-xl font-medium">Analysis</div>
+          <div className="text-neutral-400 text-sm mt-1">
+            Signals &amp; diagnostics (WIP)
+          </div>
+        </Link>
+
+        {/* Middle row */}
+        <Link href="/news" className={tileClass}>
+          <div className="text-xl font-medium">News</div>
+          <div className="text-neutral-400 text-sm mt-1">
+            Market headlines &amp; stories
+          </div>
+        </Link>
+
+        {/* LOCKED: The Hedge */}
+        <Link
+          href="#"
+          className={`${lockedTileClass} cursor-not-allowed relative`}
+          onClick={(e) => e.preventDefault()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") e.preventDefault();
+          }}
+          aria-disabled={true}
+          title="Locked"
+        >
+          <LockBadge />
+          <div className="text-xl font-medium">The Hedge</div>
+          <div className="text-neutral-400 text-sm mt-1">
+            Build your ideal risk-balanced portfolio
+          </div>
+        </Link>
+
+        {/* LOCKED: Options */}
+        <Link
+          href="#"
+          className={`${lockedTileClass} cursor-not-allowed relative`}
+          onClick={(e) => e.preventDefault()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") e.preventDefault();
+          }}
+          aria-disabled={true}
+          title="Locked"
+        >
+          <LockBadge />
+          <div className="text-xl font-medium">Options</div>
+          <div className="text-neutral-400 text-sm mt-1">
+            Find ideal contracts by edge &amp; payoff
+          </div>
+        </Link>
+
+        {/* Bottom row */}
+        {/* Notes */}
+        <Link href="/notes" className={tileClass}>
+          <div className="text-xl font-medium">Notes</div>
+          <div className="text-neutral-400 text-sm mt-1">
+            Share quick investment notes and compare ideas with your circle.
+          </div>
+        </Link>
+
+        {/* LOCKED: Crypto */}
+        <Link
+          href="#"
+          className={`${lockedTileClass} cursor-not-allowed relative`}
+          onClick={(e) => e.preventDefault()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") e.preventDefault();
+          }}
+          aria-disabled={true}
+          title="Locked"
+        >
+          <LockBadge />
+          <div className="text-xl font-medium">Crypto</div>
+          <div className="text-neutral-400 text-sm mt-1">
+            Track coins, allocations &amp; risk
+          </div>
+        </Link>
+
+        <Link href="/settings" className={tileClass}>
+          <div className="text-xl font-medium">Settings</div>
+          <div className="text-neutral-400 text-sm mt-1">
+            Profile &amp; preferences
+          </div>
+        </Link>
+      </div>
+    </main>
   );
 }

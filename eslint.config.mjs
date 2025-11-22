@@ -20,6 +20,13 @@ const eslintConfig = [
       "next-env.d.ts",
     ],
   },
+  {
+    rules: {
+      // We frequently ingest dynamic JSON payloads (FMP, PDF parsing, etc.) and
+      // intentionally use `any` when shaping those responses.
+      "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
 ];
 
 export default eslintConfig;
