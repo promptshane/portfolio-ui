@@ -12,7 +12,7 @@ function outDir() {
 export async function GET(
   _: Request,
   { params }: { params: { symbol: string } }
-): Promise<NextResponse> {
+) {
   try {
     const symbol = (params?.symbol || "").trim().toUpperCase();
     if (!symbol) {
@@ -28,6 +28,9 @@ export async function GET(
     const data = JSON.parse(fs.readFileSync(fp, "utf-8"));
     return NextResponse.json({ symbol, series: data });
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || String(err) }, { status: 500 });
+    return NextResponse.json(
+      { error: err?.message || String(err) },
+      { status: 500 }
+    );
   }
 }
