@@ -13,7 +13,7 @@ function outDir() {
 export async function GET(
   _req: NextRequest,
   { params }: { params: { symbol: string } }
-) {
+): Promise<NextResponse> {
   try {
     const symbol = (params?.symbol || "").trim().toUpperCase();
     if (!symbol) {
