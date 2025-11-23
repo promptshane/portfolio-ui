@@ -4,11 +4,17 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import prisma from "@/lib/prisma";
 
+const authSecret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+if (!authSecret) {
+  throw new Error("NEXTAUTH_SECRET (or AUTH_SECRET) must be set in production.");
+}
+
 /**
  * Unified NextAuth options used by both the API handler and server components.
  * Session contains: id, username, preferredName, email.
  */
 export const authOptions: NextAuthOptions = {
+  secret: authSecret,
   session: { strategy: "jwt" },
   providers: [
     CredentialsProvider({
