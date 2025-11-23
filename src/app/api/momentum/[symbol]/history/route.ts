@@ -1,17 +1,18 @@
 // src/app/api/momentum/[symbol]/history/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
 
 export const dynamic = "force-dynamic";
 
-type Params = { params: { symbol: string } };
-
 function outDir() {
   return path.join(process.cwd(), "ml", "outputs", "momentum_history");
 }
 
-export async function GET(_: Request, { params }: Params) {
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { symbol: string } }
+): Promise<NextResponse> {
   try {
     const symbol = (params?.symbol || "").trim().toUpperCase();
     if (!symbol) {
