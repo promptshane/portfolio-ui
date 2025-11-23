@@ -1,8 +1,7 @@
 // src/app/api/news/articles/[id]/file/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
 import path from "path";
-import { getArticleById, getPdfPath } from "@/server/news/store";
+import { getArticleById, readPdfBuffer } from "@/server/news/store";
 
 export const runtime = "nodejs";
 
@@ -19,25 +18,14 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const pdfPath = await getPdfPath(articleId);
-
-    let fileBuffer: Buffer;
-    try {
-      fileBuffer = await fs.promises.readFile(pdfPath);
-    } catch (err) {
-      console.error("Error reading PDF for download:", err);
-      return NextResponse.json(
-        { error: "PDF file not found on server." },
-        { status: 404 }
-      );
-    }
+    const fileBuffer = await readPdfBuffer(articleId);
 
     const filename =
       article.originalFilename && article.originalFilename.trim().length > 0
         ? article.originalFilename
         : `${article.id}.pdf`;
 
-    const storedExt = path.extname(pdfPath).toLowerCase();
+    const storedExt = path.extname(article.pdfPath || "").toLowerCase();
     const contentType =
       storedExt === ".txt" ? "text/plain; charset=utf-8" : "application/pdf";
 

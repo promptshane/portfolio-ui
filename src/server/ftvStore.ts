@@ -1,5 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
+import { getObjectBuffer, putObjectBuffer, s3Enabled } from "./s3Client";
 
 /** Server-side storage for FTV PDFs + metadata (JSON index).
  *  Local-dev friendly; easy to swap to S3/DB later by re-implementing these functions.
@@ -47,6 +48,7 @@ const ROOT = process.cwd();
 const DATA_DIR = path.join(ROOT, "data", "ftv");
 const INDEX_FILE = path.join(DATA_DIR, "index.json");
 const PUBLIC_DIR = path.join(ROOT, "public", "ftv");
+const S3_INDEX_KEY = "ftv/index.json";
 
 function sanitizeSymbol(sym: string) {
   return (sym || "").toUpperCase().replace(/[^A-Z0-9\-]/g, "").slice(0, 12);
@@ -65,6 +67,19 @@ async function ensureDirs() {
 }
 
 async function readIndex(): Promise<IndexShape> {
+  // Prefer S3 when configured
+  if (s3Enabled) {
+    try {
+      const buf = await getObjectBuffer(S3_INDEX_KEY);
+      if (buf) {
+        const parsed = JSON.parse(buf.toString("utf8"));
+        return typeof parsed === "object" && parsed ? parsed : {};
+      }
+    } catch {
+      // fall back to local
+    }
+  }
+
   await ensureDirs();
   try {
     const raw = await fs.readFile(INDEX_FILE, "utf8");
@@ -76,7 +91,17 @@ async function readIndex(): Promise<IndexShape> {
 }
 
 async function writeIndex(idx: IndexShape) {
-  await fs.writeFile(INDEX_FILE, JSON.stringify(idx, null, 2), "utf8");
+  const payload = JSON.stringify(idx, null, 2);
+  if (s3Enabled) {
+    await putObjectBuffer({
+      key: S3_INDEX_KEY,
+      body: Buffer.from(payload, "utf8"),
+      contentType: "application/json",
+    });
+    return;
+  }
+  await ensureDirs();
+  await fs.writeFile(INDEX_FILE, payload, "utf8");
 }
 
 async function writePdfFile(symbol: string, fileBuf: Buffer, originalName?: string) {
@@ -85,6 +110,20 @@ async function writePdfFile(symbol: string, fileBuf: Buffer, originalName?: stri
   const base = (originalName || `${sym}.pdf`).replace(/\s+/g, "-").replace(/[^A-Za-z0-9._-]/g, "");
   const ext = path.extname(base).toLowerCase() || ".pdf";
   const fileName = `${ts}-${base.replace(ext, "")}${ext === ".pdf" ? "" : ".pdf"}`.toLowerCase();
+
+  const key = `ftv/${sym}/${fileName}`;
+
+  if (s3Enabled) {
+    await putObjectBuffer({
+      key,
+      body: fileBuf,
+      contentType: "application/pdf",
+    });
+    const bucket = process.env.AWS_S3_BUCKET;
+    const region = process.env.AWS_REGION || "us-east-1";
+    const publicUrl = bucket ? `https://${bucket}.s3.${region}.amazonaws.com/${key}` : undefined;
+    return { fileName, publicUrl };
+  }
 
   const destDir = path.join(PUBLIC_DIR, sym);
   await fs.mkdir(destDir, { recursive: true });
@@ -210,6 +249,14 @@ function resolvePdfPath(meta: FtvDocMeta): string {
 export async function readLatestPdf(symbol: string): Promise<Buffer | undefined> {
   const latest = await getLatest(symbol);
   if (!latest?.filename) return undefined;
+  const key = `ftv/${sanitizeSymbol(symbol)}/${latest.filename}`;
+  if (s3Enabled) {
+    try {
+      return await getObjectBuffer(key) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  }
   const abs = resolvePdfPath(latest);
   try {
     return await fs.readFile(abs);

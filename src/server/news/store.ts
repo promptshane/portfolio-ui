@@ -4,14 +4,7 @@ import path from "path";
 import crypto from "crypto";
 import type { NewsArticle } from "@prisma/client";
 import prisma from "@/lib/prisma";
-
-const PDF_DIR = path.join(process.cwd(), "data", "news-pdfs");
-
-function ensurePdfDir() {
-  if (!fs.existsSync(PDF_DIR)) {
-    fs.mkdirSync(PDF_DIR, { recursive: true });
-  }
-}
+import { getObjectBuffer, putObjectBuffer, s3Enabled } from "../s3Client";
 
 const SUPPORTED_EXTENSIONS = new Set([".pdf", ".txt"]);
 
@@ -33,8 +26,6 @@ export async function addPdfFromBuffer(
   buffer: Buffer,
   originalFilename: string
 ): Promise<{ article: NewsArticle; isDuplicate: boolean }> {
-  ensurePdfDir();
-
   const id = generateArticleId(buffer);
   const existing = await prisma.newsArticle.findUnique({
     where: { id },
@@ -46,20 +37,26 @@ export async function addPdfFromBuffer(
   }
 
   const storedExtension = determineStoredExtension(originalFilename);
-  const relativePath = path.join(
-    "data",
-    "news-pdfs",
-    `${id}${storedExtension}`
-  );
-  const absolutePath = path.join(process.cwd(), relativePath);
+  const key = `news-pdfs/${id}${storedExtension}`;
 
-  await fs.promises.writeFile(absolutePath, buffer);
+  if (s3Enabled) {
+    await putObjectBuffer({
+      key,
+      body: buffer,
+      contentType: storedExtension === ".txt" ? "text/plain" : "application/pdf",
+    });
+  } else {
+    const relativePath = path.join("data", "news-pdfs", `${id}${storedExtension}`);
+    const absolutePath = path.join(process.cwd(), relativePath);
+    await fs.promises.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.promises.writeFile(absolutePath, buffer);
+  }
 
   const article = await prisma.newsArticle.create({
     data: {
       id,
       originalFilename,
-      pdfPath: relativePath,
+      pdfPath: key,
     },
   });
 
@@ -80,20 +77,24 @@ export async function getArticleById(
   });
 }
 
-export async function getPdfPath(id: string): Promise<string> {
+export async function readPdfBuffer(id: string): Promise<Buffer> {
   const article = await prisma.newsArticle.findUnique({
     where: { id },
   });
-
   if (!article) {
     throw new Error(`NewsArticle not found for id=${id}`);
   }
 
-  const storedPath = article.pdfPath;
-  if (path.isAbsolute(storedPath)) {
-    return storedPath;
+  if (s3Enabled) {
+    const buf = await getObjectBuffer(article.pdfPath);
+    if (!buf) throw new Error("PDF not found in S3");
+    return buf;
   }
-  return path.join(process.cwd(), storedPath);
+
+  const storedPath = path.isAbsolute(article.pdfPath)
+    ? article.pdfPath
+    : path.join(process.cwd(), article.pdfPath);
+  return await fs.promises.readFile(storedPath);
 }
 
 export async function deletePdf(id: string): Promise<void> {
@@ -102,13 +103,12 @@ export async function deletePdf(id: string): Promise<void> {
   });
 
   if (article) {
-    const storedPath = article.pdfPath;
-    const absolutePath = path.isAbsolute(storedPath)
-      ? storedPath
-      : path.join(process.cwd(), storedPath);
-
+    // Best-effort local cleanup; S3 cleanup can be handled separately via lifecycle or manual delete.
     try {
-      await fs.promises.unlink(absolutePath);
+      const storedPath = path.isAbsolute(article.pdfPath)
+        ? article.pdfPath
+        : path.join(process.cwd(), article.pdfPath);
+      await fs.promises.unlink(storedPath);
     } catch {
       // ignore if file is already gone
     }

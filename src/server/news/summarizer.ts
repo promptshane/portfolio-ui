@@ -1,9 +1,8 @@
 // src/server/news/summarizer.ts
-import fs from "fs";
-import path from "path";
 import OpenAI from "openai";
+import { Readable } from "stream";
 import prisma from "@/lib/prisma";
-import { getPdfPath } from "./store";
+import { readPdfBuffer, getArticleById } from "./store";
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error("OPENAI_API_KEY is not set");
@@ -47,11 +46,16 @@ type ArticleModelInput =
 async function prepareArticleModelInput(
   articleId: string
 ): Promise<ArticleModelInput> {
-  const docPath = await getPdfPath(articleId);
-  const ext = path.extname(docPath).toLowerCase();
+  const article = await getArticleById(articleId);
+  if (!article) {
+    throw new Error(`NewsArticle not found for id=${articleId}`);
+  }
+
+  const ext = (article.pdfPath && article.pdfPath.toLowerCase().endsWith(".txt")) ? ".txt" : ".pdf";
+  const buffer = await readPdfBuffer(articleId);
 
   if (ext === ".txt") {
-    const text = await fs.promises.readFile(docPath, "utf-8");
+    const text = buffer.toString("utf-8");
     return {
       kind: "text",
       text: `Document contents (plain text):\n${text}`,
@@ -59,7 +63,7 @@ async function prepareArticleModelInput(
   }
 
   const uploaded = await client.files.create({
-    file: fs.createReadStream(docPath),
+    file: Readable.from(buffer),
     purpose: "assistants",
   });
 
