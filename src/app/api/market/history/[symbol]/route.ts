@@ -40,7 +40,7 @@ function normalizeInterval(raw: string | null): IntervalKind {
 export async function GET(
   req: Request,
   { params }: { params: { symbol: string } }
-): Promise<NextResponse> {
+) {
   try {
     const sym = (params?.symbol || "").trim().toUpperCase();
     if (!sym) {
