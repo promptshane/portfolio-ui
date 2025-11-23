@@ -1,6 +1,6 @@
 // src/server/news/summarizer.ts
 import OpenAI from "openai";
-import { Readable } from "stream";
+import { toFile } from "openai/uploads";
 import prisma from "@/lib/prisma";
 import { readPdfBuffer, getArticleById } from "./store";
 
@@ -63,7 +63,7 @@ async function prepareArticleModelInput(
   }
 
   const uploaded = await client.files.create({
-    file: Readable.from(buffer),
+    file: await toFile(buffer, `${articleId}.pdf`),
     purpose: "assistants",
   });
 
