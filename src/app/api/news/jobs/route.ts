@@ -49,8 +49,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (type === "summarize" || type === "resummarize") {
-      const ids = Array.isArray(body?.articleIds) ? body.articleIds : [];
-      const articleIds = ids.map((id: any) => String(id)).filter((id) => id.trim().length > 0);
+      const ids: unknown[] = Array.isArray(body?.articleIds) ? body.articleIds : [];
+      const articleIds = ids.map((id: unknown) => String(id)).filter((id) => id.trim().length > 0);
       const job = await enqueueSummarizeJob({
         userId: uid,
         articleIds,

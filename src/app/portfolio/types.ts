@@ -27,9 +27,9 @@ export type PositionRow = {
   avgCost: number;
   retAbs: number;
   retPct: number;
-  fin?: number;
-  mom?: number;
-  fair?: number;
+  fin?: number | null;
+  mom?: number | null;
+  fair?: number | null;
   strength?: number;
   stability?: number;
   rec?: number;

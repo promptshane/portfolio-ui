@@ -6,6 +6,8 @@ import {
   type IntradayBar,
 } from "@/app/lib/fmp-history";
 
+const FMP_API_KEY = process.env.FMP_API_KEY || process.env.NEXT_PUBLIC_FMP_API_KEY || "";
+
 /**
  * POST /api/portfolio/series
  * Body: { items: { sym: string; shares: number; avgCost?: number }[], interval?: "1min"|"5min" }
@@ -150,21 +152,23 @@ export async function POST(req: NextRequest) {
     let baseline = 0;
     const prevBySym = new Map<string, number>();
     try {
-      const quoteUrl = `https://financialmodelingprep.com/api/v3/quote/${syms.join(",")}?apikey=${apiKey}`;
-      const qr = await fetch(quoteUrl, { cache: "no-store" });
-      if (qr.ok) {
-        const quotes = (await qr.json()) as Array<{ symbol: string; previousClose?: number; price?: number }>;
-        for (const q of quotes || []) {
-          if (q?.symbol) {
-            const prev = Number(q.previousClose ?? q.price ?? 0);
-            prevBySym.set(q.symbol.toUpperCase(), prev);
+      if (FMP_API_KEY) {
+        const quoteUrl = `https://financialmodelingprep.com/api/v3/quote/${syms.join(",")}?apikey=${FMP_API_KEY}`;
+        const qr = await fetch(quoteUrl, { cache: "no-store" });
+        if (qr.ok) {
+          const quotes = (await qr.json()) as Array<{ symbol: string; previousClose?: number; price?: number }>;
+          for (const q of quotes || []) {
+            if (q?.symbol) {
+              const prev = Number(q.previousClose ?? q.price ?? 0);
+              prevBySym.set(q.symbol.toUpperCase(), prev);
+            }
           }
+          baseline = items.reduce((sum, h) => {
+            const s = (h.sym || "").toUpperCase();
+            const prev = prevBySym.get(s) ?? 0;
+            return sum + (Number(h.shares) || 0) * prev;
+          }, 0);
         }
-        baseline = items.reduce((sum, h) => {
-          const s = (h.sym || "").toUpperCase();
-          const prev = prevBySym.get(s) ?? 0;
-          return sum + (Number(h.shares) || 0) * prev;
-        }, 0);
       }
     } catch {
       // tolerate baseline failure; client can still render absolute series

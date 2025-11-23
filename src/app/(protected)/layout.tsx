@@ -1,6 +1,6 @@
 // src/app/(protected)/layout.tsx
 import { headers } from "next/headers";
-import { getServerSession, Session } from "next-auth";
+import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import React from "react";
@@ -10,7 +10,8 @@ export default async function ProtectedLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const requestUrl = headers().get("next-url") || "";
+  const headerList = await headers();
+  const requestUrl = headerList.get("next-url") || "";
   const pathname = new URL(requestUrl, "http://localhost").pathname;
 
   const session = await getServerSession(authOptions);

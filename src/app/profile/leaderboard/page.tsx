@@ -38,7 +38,7 @@ const RANGE_OPTIONS: LeaderboardRange[] = [
   "5Y",
 ];
 
-type FriendEntry = { id: string; handle: string; preferredName?: string | null };
+type FriendEntry = { id: string; handle: string; preferredName?: string | null; pct?: number };
 
 function deriveFriends(data: ProfileSocialResponse): FriendEntry[] {
   const following = data.following ?? [];
@@ -143,7 +143,7 @@ export default function LeaderboardPage() {
     : null;
   const selfPreferred = sessionUser?.preferredName ?? sessionUser?.name ?? null;
 
-  const rankedFriends = useMemo(() => {
+  const rankedFriends = useMemo<Array<FriendEntry & { pct: number }>>(() => {
     const base: FriendEntry[] = friends.slice();
     if (selfHandle) {
       const exists = base.some((f) => f.handle === selfHandle);
@@ -155,7 +155,6 @@ export default function LeaderboardPage() {
         });
       }
     }
-    if (!selfHandle && base.length === 0) return base;
     return base
       .map((f) => ({
         ...f,

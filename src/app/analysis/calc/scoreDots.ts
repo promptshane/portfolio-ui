@@ -37,21 +37,21 @@ export async function fetchFtvDotScore(
   sym: string,
   price: number | null | undefined
 ): Promise<number | null> {
-  if (!Number.isFinite(price)) return null;
+  if (typeof price !== "number" || !Number.isFinite(price)) return null;
   try {
     const res = await fetch(`/api/ftv/docs?symbol=${encodeURIComponent(sym)}`, { cache: "no-store" });
     const data: FtvDocsResponse = await res.json();
     if (!res.ok || !data?.ok) return null;
     const latest = data.latest;
     if (!latest?.url) return null;
-    const estimate =
+    const estimateRaw =
       typeof latest.ftvEstimate === "number"
         ? latest.ftvEstimate
         : latest?.ftvEstimate != null
-        ? Number(latest.ftvEstimate)
-        : undefined;
-    if (!Number.isFinite(estimate) || estimate === 0) return null;
-    const ratio = (price as number) / estimate;
+          ? Number(latest.ftvEstimate)
+          : null;
+    if (typeof estimateRaw !== "number" || !Number.isFinite(estimateRaw) || estimateRaw === 0) return null;
+    const ratio = price / estimateRaw;
     if (!Number.isFinite(ratio)) return null;
     if (ratio < 0.95) return 85;
     if (ratio > 1.05) return 20;

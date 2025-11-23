@@ -59,12 +59,9 @@ export const authOptions: NextAuthOptions = {
       // On initial sign-in, copy fields from user object
       if (user) {
         token.sub = user.id as string;
-        // @ts-expect-error: custom claims
         token.username = (user as any).username;
-        // @ts-expect-error: custom claims
         token.preferredName = (user as any).preferredName ?? null;
         token.email = user.email ?? null;
-        // @ts-expect-error: custom claims
         token.colorPalette = (user as any).colorPalette ?? "classic";
       } else {
         // Keep claims current if user changed preferredName/username
@@ -75,12 +72,9 @@ export const authOptions: NextAuthOptions = {
               select: { username: true, preferredName: true, email: true, colorPalette: true },
             });
             if (dbUser) {
-              // @ts-expect-error: custom claims
               token.username = dbUser.username;
-              // @ts-expect-error: custom claims
               token.preferredName = dbUser.preferredName ?? null;
               token.email = dbUser.email ?? null;
-              // @ts-expect-error: custom claims
               token.colorPalette = dbUser.colorPalette ?? "classic";
             }
           } catch {
@@ -91,26 +85,19 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
     async session({ session, token }) {
-      // Make these always available to the app
-      // @ts-expect-error: extend session user
-      session.user = session.user || {};
-      // @ts-expect-error: extend session user
-      session.user.id = token.sub ?? null;
-      // @ts-expect-error: extend session user
-      session.user.username = (token as any).username ?? null;
-      // @ts-expect-error: extend session user
-      session.user.preferredName = (token as any).preferredName ?? null;
-      if (session.user) {
-        session.user.name =
-          // @ts-expect-error: preferredName is a custom claim on session.user
-          session.user.preferredName || // preferred if present
-          // @ts-expect-error: username is a custom claim on session.user
-          session.user.username ||      // fallback to username
-          session.user.name || null;
-        session.user.email = (token as any).email ?? session.user.email ?? null;
-        // @ts-expect-error: colorPalette is a custom claim on session.user
-        session.user.colorPalette = (token as any).colorPalette ?? session.user.colorPalette ?? "classic";
-      }
+      const user = (session.user || {}) as Record<string, unknown>;
+      user.id = token.sub ?? null;
+      user.username = (token as any).username ?? null;
+      user.preferredName = (token as any).preferredName ?? null;
+      user.name =
+        user.preferredName ||
+        user.username ||
+        (session.user as any)?.name ||
+        null;
+      user.email = (token as any).email ?? (session.user as any)?.email ?? null;
+      user.colorPalette =
+        (token as any).colorPalette ?? (session.user as any)?.colorPalette ?? "classic";
+      session.user = user as any;
       return session;
     },
   },

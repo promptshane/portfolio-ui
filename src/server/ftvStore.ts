@@ -189,7 +189,7 @@ export async function mergeIntoLatest(
   type ParsedKey = keyof (FtvParsedFields & FtvParseMeta);
   for (const [k, v] of Object.entries(patch) as [ParsedKey, unknown][]) {
     if (v !== undefined) {
-      merged[k] = v as FtvDocMeta[ParsedKey];
+      (merged as any)[k] = v;
     }
   }
 

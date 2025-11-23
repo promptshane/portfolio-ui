@@ -20,7 +20,8 @@ export async function POST(req: Request) {
   }
   if (password !== expected) {
     // Clear any prior cookie on failure
-    cookies().set({
+    const jar = await cookies();
+    jar.set({
       name: "ftv_dev",
       value: "",
       httpOnly: true,
@@ -33,7 +34,8 @@ export async function POST(req: Request) {
   }
 
   // Set dev auth cookie
-  cookies().set({
+  const jar = await cookies();
+  jar.set({
     name: "ftv_dev",
     value: "1",
     httpOnly: true,

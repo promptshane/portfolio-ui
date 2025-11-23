@@ -1,7 +1,7 @@
 // src/app/analysis/sections/MomentumChart.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { IndicKey, RangeKey, toPathXY, KeyStats } from "../shared";
 
 /** Local extension so we can add ADX + intraday ranges without touching shared types yet */
@@ -290,7 +290,7 @@ export default function MomentumChart({
             const wick = "#9ca3af";
             const outline = "#111827";
 
-            const elements: JSX.Element[] = [];
+            const elements: ReactElement[] = [];
             for (let i = 0; i < len; i++) {
               const x = momentumGeom.X(i);
               const yH = momentumGeom.Y(high[i]);

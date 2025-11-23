@@ -1,5 +1,5 @@
 // src/app/api/market/history/[symbol]/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   fetchDailyHistory,
   fetchWeeklyHistory,
@@ -8,6 +8,8 @@ import {
 } from "@/app/lib/fmp-history";
 
 export const dynamic = "force-dynamic"; // ensure fresh fetch; no static caching
+
+type Params = { params: Promise<{ symbol: string }> };
 
 type IntervalKind = "daily" | "weekly" | "5min" | "1hour";
 
@@ -37,12 +39,10 @@ function normalizeInterval(raw: string | null): IntervalKind {
   return "daily";
 }
 
-export async function GET(
-  req: Request,
-  { params }: { params: { symbol: string } }
-) {
+export async function GET(req: NextRequest, { params }: Params) {
   try {
-    const sym = (params?.symbol || "").trim().toUpperCase();
+    const { symbol } = await params;
+    const sym = (symbol || "").trim().toUpperCase();
     if (!sym) {
       return NextResponse.json({ error: "Missing symbol" }, { status: 400 });
     }

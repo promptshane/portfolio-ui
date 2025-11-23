@@ -67,7 +67,7 @@ export async function POST(req: Request) {
   const action = body?.action;
   if (action !== "confirm") return bad("Unsupported action");
 
-  const cookie = cookies().get("ftv_dev");
+  const cookie = (await cookies()).get("ftv_dev");
   if (!cookie || cookie.value !== "1") {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }

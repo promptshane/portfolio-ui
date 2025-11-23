@@ -25,12 +25,13 @@ import path from "path";
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { symbol: string } }
+  { params }: { params: Promise<{ symbol: string }> }
 ) {
   const root = process.cwd();
   const baseDir = path.join(root, "ml", "outputs", "weights");
 
-  const symbolRaw = (params.symbol || "").trim();
+  const { symbol } = await params;
+  const symbolRaw = (symbol || "").trim();
   if (!symbolRaw) {
     return new Response(JSON.stringify({ error: "symbol required" }), {
       status: 400,

@@ -8,16 +8,18 @@ export const runtime = "nodejs";
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const article = await getArticleById(params.id);
+    const { id } = await params;
+    const articleId = (id || "").trim();
+    const article = await getArticleById(articleId);
 
     if (!article) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const pdfPath = await getPdfPath(params.id);
+    const pdfPath = await getPdfPath(articleId);
 
     let fileBuffer: Buffer;
     try {
@@ -39,7 +41,7 @@ export async function GET(
     const contentType =
       storedExt === ".txt" ? "text/plain; charset=utf-8" : "application/pdf";
 
-    return new NextResponse(fileBuffer, {
+    return new NextResponse(new Uint8Array(fileBuffer), {
       status: 200,
       headers: {
         "Content-Type": contentType,

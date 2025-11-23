@@ -1,7 +1,7 @@
 // src/app/news/database/page.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../../components/header";
 import { useNewsJobs } from "../useNewsJobs";
@@ -851,7 +851,7 @@ export default function NewsDatabasePage() {
                       parseArticleData(article);
                     const isOpen = openId === article.id;
 
-                    const rows: JSX.Element[] = [];
+                    const rows: ReactElement[] = [];
 
                     rows.push(
                       <tr

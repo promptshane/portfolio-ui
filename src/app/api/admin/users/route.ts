@@ -43,7 +43,7 @@ async function loadAllUsersWithPrisma(): Promise<MinimalUser[] | null> {
  */
 export async function GET(req: Request) {
   try {
-    const jar = cookies();
+    const jar = await cookies();
     const dev = jar.get("ftv_dev");
     if (!dev || dev.value !== "1") {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });

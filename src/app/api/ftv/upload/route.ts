@@ -7,7 +7,7 @@ import parseFtvPdf from "@/server/ftvParser";
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const dev = cookies().get("ftv_dev");
+  const dev = (await cookies()).get("ftv_dev");
   if (!dev || dev.value !== "1") {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }

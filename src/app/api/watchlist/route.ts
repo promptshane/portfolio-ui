@@ -35,8 +35,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Bad JSON" }, { status: 400 });
   }
 
-  const symbols = Array.from(
-    new Set(
+  const symbols: string[] = Array.from(
+    new Set<string>(
       (Array.isArray(body?.items) ? body.items : [])
         .map((x: any) => (x?.sym || "").toUpperCase().trim())
         .filter(Boolean)

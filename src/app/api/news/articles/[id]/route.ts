@@ -22,9 +22,11 @@ export const runtime = "nodejs";
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const article = await getArticleById(params.id);
+  const { id } = await params;
+  const articleId = (id || "").trim();
+  const article = await getArticleById(articleId);
 
   if (!article) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -50,10 +52,11 @@ export async function GET(
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await deletePdf(params.id);
+    const { id } = await params;
+    await deletePdf((id || "").trim());
     return new NextResponse(null, { status: 204 });
   } catch (err) {
     console.error("Error deleting PDF:", err);
@@ -66,9 +69,12 @@ export async function DELETE(
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
+    const articleId = (id || "").trim();
+
     let body: any = null;
     try {
       body = await req.json();
@@ -81,7 +87,7 @@ export async function POST(
 
     // Summarization
     if (action === "summarize") {
-      const summary = await generateAndStoreSummary(params.id);
+      const summary = await generateAndStoreSummary(articleId);
 
       return NextResponse.json(
         {
@@ -99,7 +105,7 @@ export async function POST(
 
       // If we don't know who the user is, just no-op but return ok
       if (uid) {
-        await markArticleViewed(params.id, uid);
+        await markArticleViewed(articleId, uid);
       }
 
       return NextResponse.json({ status: "ok" }, { status: 200 });
@@ -127,7 +133,7 @@ export async function POST(
       }
 
       const updatedHistory = await deleteQuestionForUser(
-        params.id,
+        articleId,
         uid,
         questionId
       );
@@ -140,12 +146,12 @@ export async function POST(
 
     // Q&A: treat "qa" and legacy "ask" as equivalent
     if (action === "qa" || action === "ask") {
-      const rawQuestions = Array.isArray(body?.questions)
+      const rawQuestions: unknown[] = Array.isArray(body?.questions)
         ? body.questions
         : [];
       const questions = rawQuestions
-        .filter((q) => typeof q === "string")
-        .map((q: string) => q.trim())
+        .filter((q: unknown): q is string => typeof q === "string")
+        .map((q) => q.trim())
         .filter((q) => q.length > 0);
 
       if (!questions.length) {
@@ -156,7 +162,7 @@ export async function POST(
       }
 
       // Call the model to answer questions based on this article's PDF
-      const answers = await answerQuestionsForArticle(params.id, questions);
+      const answers = await answerQuestionsForArticle(articleId, questions);
 
       // Append to QA history in the DB for this user, if logged in
       const session = await getServerSession(authOptions);
@@ -176,7 +182,7 @@ export async function POST(
           answeredAtISO: now.toISOString(),
         }));
 
-        await appendQaEntriesForUser(params.id, uid, newEntries);
+        await appendQaEntriesForUser(articleId, uid, newEntries);
       }
 
       // Return just the answers in the shape the News page expects
@@ -201,4 +207,3 @@ export async function POST(
     );
   }
 }
-

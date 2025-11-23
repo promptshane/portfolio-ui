@@ -10,7 +10,7 @@ export const CURRENT_PARSE_VERSION = "2025-11-01-esg-v1";
 export type EsgParsed = Partial<{
   esgRisk: number;                                // e.g., 13.4
   esgCategory: "Negligible" | "Low" | "Medium" | "High" | "Severe";
-  esgAsOf: string | null;                         // e.g., "Sep 03, 2025"
+  esgAsOf?: string;                               // e.g., "Sep 03, 2025"
   esgChunkRaw: string;                            // compact raw slice where the score was seen
 }>;
 
@@ -258,7 +258,7 @@ function finalizeFromChunk(chunk: string, anchorInChunk: number): EsgParsed {
     return {
       esgRisk: undefined,
       esgCategory: undefined,
-      esgAsOf: asOf ?? null,
+      esgAsOf: asOf ?? undefined,
       esgChunkRaw: chunk,
     };
   }
@@ -271,7 +271,7 @@ function finalizeFromChunk(chunk: string, anchorInChunk: number): EsgParsed {
   return {
     esgRisk: chosen.value,
     esgCategory: chosen.category,
-    esgAsOf: asOf ?? null,
+    esgAsOf: asOf ?? undefined,
     esgChunkRaw: compact,
   };
 }

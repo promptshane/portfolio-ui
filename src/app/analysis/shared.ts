@@ -50,6 +50,7 @@ export type FtvDocMeta = {
   capitalAllocation?: "Poor" | "Standard" | "Exemplary" | string;
   esgRisk?: number;
   esgAsOf?: string;
+  esgCategory?: "Negligible" | "Low" | "Medium" | "High" | "Severe" | string;
 
   // Parse metadata (for auto-reparse/versioning)
   parseVersion?: string;

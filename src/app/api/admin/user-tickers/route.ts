@@ -180,7 +180,7 @@ async function buildResponse(req: Request, userIds: string[]) {
  */
 export async function POST(req: Request) {
   try {
-    const dev = cookies().get("ftv_dev");
+    const dev = (await cookies()).get("ftv_dev");
     if (!dev || dev.value !== "1") {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
@@ -209,7 +209,7 @@ export async function POST(req: Request) {
  */
 export async function GET(req: Request) {
   try {
-    const dev = cookies().get("ftv_dev");
+    const dev = (await cookies()).get("ftv_dev");
     if (!dev || dev.value !== "1") {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }

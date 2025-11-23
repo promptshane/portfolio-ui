@@ -50,8 +50,9 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieJar = await cookies();
   const cookieTheme = normalizeThemeCookie(
-    cookies().get("theme")?.value || "default"
+    cookieJar.get("theme")?.value || "default"
   );
   let theme = cookieTheme;
   let session; // Declare outside try-catch
