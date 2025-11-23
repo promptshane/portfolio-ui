@@ -12,13 +12,12 @@ function outDir() {
 export async function GET(
   _: Request,
   { params }: { params: { symbol: string } }
-): Promise<ReturnType<typeof NextResponse.json>> {
+): Promise<NextResponse> {
   try {
     const symbol = (params?.symbol || "").trim().toUpperCase();
     if (!symbol) {
       return NextResponse.json({ error: "Missing symbol" }, { status: 400 });
     }
-
     const fp = path.join(outDir(), `${symbol}.json`);
     if (!fs.existsSync(fp)) {
       return NextResponse.json(
@@ -26,13 +25,9 @@ export async function GET(
         { status: 404 }
       );
     }
-
     const data = JSON.parse(fs.readFileSync(fp, "utf-8"));
     return NextResponse.json({ symbol, series: data });
   } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message || String(err) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: err?.message || String(err) }, { status: 500 });
   }
 }
