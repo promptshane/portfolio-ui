@@ -35,23 +35,7 @@ function getUserId(session: unknown): number | null {
   return null;
 }
 
-export async function ensureTable() {
-  await prisma.$executeRaw`
-    CREATE TABLE IF NOT EXISTS "OverseerLink" (
-      "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-      "overseerId" INTEGER NOT NULL,
-      "targetId" INTEGER NOT NULL,
-      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )
-  `;
-  await prisma.$executeRaw`
-    CREATE UNIQUE INDEX IF NOT EXISTS "OverseerLink_overseerId_targetId_key"
-    ON "OverseerLink" ("overseerId","targetId")
-  `;
-}
-
 async function listOverseen(uid: number): Promise<OverseenRow[]> {
-  await ensureTable();
   const rows = await prisma.$queryRaw<OverseenRow[]>`
     SELECT u.id, u.username, u.preferredName
     FROM "OverseerLink" o
@@ -114,12 +98,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
       }
 
-      await ensureTable();
-      await prisma.$executeRaw`
-        INSERT INTO "OverseerLink" ("overseerId","targetId","createdAt")
-        VALUES (${uid}, ${target.id}, CURRENT_TIMESTAMP)
-        ON CONFLICT("overseerId","targetId") DO NOTHING
-      `;
+      await prisma.overseerLink.upsert({
+        where: { overseerId_targetId: { overseerId: uid, targetId: target.id } },
+        update: {},
+        create: { overseerId: uid, targetId: target.id },
+      });
 
       return NextResponse.json({
         ok: true,
@@ -158,11 +141,9 @@ export async function POST(req: NextRequest) {
         select: { id: true, username: true, preferredName: true },
       });
 
-      await ensureTable();
-      await prisma.$executeRaw`
-        INSERT INTO "OverseerLink" ("overseerId","targetId","createdAt")
-        VALUES (${uid}, ${created.id}, CURRENT_TIMESTAMP)
-      `;
+      await prisma.overseerLink.create({
+        data: { overseerId: uid, targetId: created.id },
+      });
 
       return NextResponse.json({ ok: true, account: created });
     }
@@ -190,11 +171,9 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "targetUserId required" }, { status: 400 });
   }
 
-  await ensureTable();
-  await prisma.$executeRaw`
-    DELETE FROM "OverseerLink"
-    WHERE "overseerId" = ${uid} AND "targetId" = ${targetId}
-  `;
+  await prisma.overseerLink.deleteMany({
+    where: { overseerId: uid, targetId },
+  });
 
   return NextResponse.json({ ok: true });
 }

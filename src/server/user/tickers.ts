@@ -1,6 +1,5 @@
 // src/server/user/tickers.ts
 import prisma from "@/lib/prisma";
-import { ensureTable as ensureOverseerTable } from "@/app/api/oversee/route";
 
 function normalizeSymbol(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -19,8 +18,6 @@ export async function getAggregatedTickerSets(
   if (!userId) {
     return { portfolio: [], watchlist: [] };
   }
-
-  await ensureOverseerTable();
 
   const overseen = await prisma.overseerLink.findMany({
     where: { overseerId: userId },

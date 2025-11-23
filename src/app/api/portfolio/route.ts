@@ -3,7 +3,6 @@ import { z } from "zod";
 import prisma from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { ensureTable as ensureOverseerTable } from "@/app/api/oversee/route";
 
 export const dynamic = "force-dynamic";
 
@@ -29,14 +28,11 @@ function getSessionUserId(session: unknown): number | null {
 
 async function ensureViewAccess(requestorId: number, targetId: number) {
   if (requestorId === targetId) return true;
-  await ensureOverseerTable();
-  const rows = await prisma.$queryRaw<{ count: bigint }[]>`
-    SELECT COUNT(*) as count
-    FROM "OverseerLink"
-    WHERE "overseerId" = ${requestorId} AND "targetId" = ${targetId}
-  `;
-  const count = rows?.[0]?.count ?? BigInt(0);
-  return count > BigInt(0);
+  const link = await prisma.overseerLink.findUnique({
+    where: { overseerId_targetId: { overseerId: requestorId, targetId } },
+    select: { id: true },
+  });
+  return !!link;
 }
 
 // GET: return holdings for target (self or overseen)

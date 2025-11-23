@@ -37,46 +37,6 @@ type RefreshCriteria = {
 const ACTIVE_STATUSES: NewsBatchStatus[] = ["pending", "running"];
 const runningJobs = new Set<number>();
 let resumed = false;
-let jobTableReady = false;
-let jobEnsurePromise: Promise<void> | null = null;
-
-async function ensureNewsBatchJobTable() {
-  if (jobTableReady) return;
-  if (jobEnsurePromise) {
-    await jobEnsurePromise;
-    return;
-  }
-
-  jobEnsurePromise = (async () => {
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "NewsBatchJob" (
-        "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        "userId" INTEGER NOT NULL,
-        "type" TEXT NOT NULL,
-        "status" TEXT NOT NULL DEFAULT 'pending',
-        "total" INTEGER NOT NULL DEFAULT 0,
-        "completed" INTEGER NOT NULL DEFAULT 0,
-        "summary" TEXT,
-        "criteriaJson" TEXT,
-        "lastError" TEXT,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT "NewsBatchJob_userId_fkey"
-          FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
-      )
-    `);
-    await prisma.$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "NewsBatchJob_userId_status_createdAt_idx"
-      ON "NewsBatchJob" ("userId", "status", "createdAt")
-    `);
-    jobTableReady = true;
-  })().finally(() => {
-    jobEnsurePromise = null;
-  });
-
-  await jobEnsurePromise;
-}
-
 function scheduleJob(jobId: number) {
   setTimeout(() => {
     void runJob(jobId);
@@ -86,7 +46,6 @@ function scheduleJob(jobId: number) {
 async function resumePendingJobsOnce() {
   if (resumed) return;
   resumed = true;
-  await ensureNewsBatchJobTable();
   const jobs = await prisma.newsBatchJob.findMany({
     where: { status: { in: ACTIVE_STATUSES } },
     select: { id: true },
@@ -221,7 +180,6 @@ async function runJob(jobId: number) {
   if (runningJobs.has(jobId)) return;
   runningJobs.add(jobId);
   try {
-    await ensureNewsBatchJobTable();
     let job = await prisma.newsBatchJob.findUnique({ where: { id: jobId } });
     if (!job) return;
     if (!ACTIVE_STATUSES.includes(job.status)) return;
@@ -251,7 +209,6 @@ resumePendingJobsOnce().catch((err) => {
 });
 
 async function ensureNoActiveJob(userId: number) {
-  await ensureNewsBatchJobTable();
   const existing = await prisma.newsBatchJob.findFirst({
     where: {
       userId,
@@ -269,7 +226,6 @@ export async function enqueueSummarizeJob(options: {
   type: Extract<NewsBatchType, "summarize" | "resummarize">;
   label?: string;
 }) {
-  await ensureNewsBatchJobTable();
   await ensureNoActiveJob(options.userId);
   const articleIds = Array.from(new Set(options.articleIds)).filter(Boolean);
   if (!articleIds.length) {
@@ -299,7 +255,6 @@ export async function enqueueRefreshJob(options: {
   lookbackDays?: number;
   maxEmails?: number;
 }) {
-  await ensureNewsBatchJobTable();
   await ensureNoActiveJob(options.userId);
   const senders = await getVerifiedEmailsForUser(options.userId);
   if (!senders.length) {
@@ -326,7 +281,6 @@ export async function enqueueRefreshJob(options: {
 
 export async function getJobsForUser(userId: number, limit = 5): Promise<JobSnapshot[]> {
   if (!userId) return [];
-  await ensureNewsBatchJobTable();
   const jobs = await prisma.newsBatchJob.findMany({
     where: { userId },
     orderBy: { createdAt: "desc" },
