@@ -1,7 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  outputFileTracingExcludes: {
+    "*": [
+      "./data/**",
+      "./public/ftv/**",
+      "./prisma/**",
+      "./sqlite/**",
+    ],
+  },
 };
 
 export default nextConfig;
