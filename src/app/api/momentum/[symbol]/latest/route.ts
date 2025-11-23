@@ -5,14 +5,15 @@ import path from "node:path";
 
 export const dynamic = "force-dynamic";
 
-type Params = { params: { symbol: string } };
-
 function outDir() {
   // read from project-relative ml/outputs
   return path.join(process.cwd(), "ml", "outputs");
 }
 
-export async function GET(_: Request, { params }: Params) {
+export async function GET(
+  _: Request,
+  { params }: { params: { symbol: string } }
+) {
   try {
     const symbol = (params?.symbol || "").trim().toUpperCase();
     if (!symbol) {
