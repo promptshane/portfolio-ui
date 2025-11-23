@@ -12,6 +12,8 @@ frontend:
         # drop caches and sourcemaps to keep artifact under Amplify size limits
         - rm -rf .next/cache
         - find .next -name "*.map" -type f -delete
+        - find .next/server/chunks -type f -name "*.map" -delete
+        - find .next/server -maxdepth 2 -type f -size +5M -print || true
         - du -sh .next || true
   artifacts:
     baseDirectory: .next

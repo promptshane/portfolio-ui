@@ -9,6 +9,9 @@ const nextConfig: NextConfig = {
       "./sqlite/**",
     ],
   },
+  experimental: {
+    serverSourceMaps: false,
+  },
 };
 
 export default nextConfig;

@@ -47,3 +47,4 @@ next-env.d.ts
 # local artifacts (do not commit)
 data/news-pdfs/
 prisma/prisma/dev.db
+public/ftv/
