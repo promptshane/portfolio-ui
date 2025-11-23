@@ -9,6 +9,7 @@ frontend:
     build:
       commands:
         - npm run build
+        - npx prisma migrate deploy
         # drop caches and sourcemaps to keep artifact under Amplify size limits
         - rm -rf .next/cache
         - find .next -name "*.map" -type f -delete
