@@ -1,7 +1,7 @@
 import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 
-const bucket = process.env.AWS_S3_BUCKET;
-const region = process.env.AWS_REGION || "us-east-1";
+const bucket = process.env.S3_BUCKET;
+const region = process.env.S3_REGION || "us-east-1";
 
 export const s3Enabled = !!bucket;
 
@@ -9,10 +9,10 @@ export function getS3Client() {
   if (!s3Enabled) throw new Error("S3 not configured");
   return new S3Client({
     region,
-    credentials: process.env.AWS_ACCESS_KEY_ID
+    credentials: process.env.S3_ACCESS_KEY_ID
       ? {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
+          accessKeyId: process.env.S3_ACCESS_KEY_ID,
+          secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
         }
       : undefined,
   });

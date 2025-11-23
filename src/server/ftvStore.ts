@@ -119,8 +119,8 @@ async function writePdfFile(symbol: string, fileBuf: Buffer, originalName?: stri
       body: fileBuf,
       contentType: "application/pdf",
     });
-    const bucket = process.env.AWS_S3_BUCKET;
-    const region = process.env.AWS_REGION || "us-east-1";
+    const bucket = process.env.S3_BUCKET;
+    const region = process.env.S3_REGION || "us-east-1";
     const publicUrl = bucket ? `https://${bucket}.s3.${region}.amazonaws.com/${key}` : undefined;
     return { fileName, publicUrl };
   }
