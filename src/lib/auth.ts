@@ -4,10 +4,14 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import prisma from "@/lib/prisma";
 
-const authSecret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
-if (!authSecret) {
-  throw new Error("NEXTAUTH_SECRET (or AUTH_SECRET) must be set in production.");
-}
+const authSecret =
+  process.env.AUTH_SECRET ??
+  process.env.NEXTAUTH_SECRET ??
+  // Last-resort fallback to avoid runtime crashes if env injection fails (log a warning).
+  (() => {
+    console.warn("WARNING: NEXTAUTH_SECRET/AUTH_SECRET missing at runtime. Using insecure fallback.");
+    return "insecure-default-nextauth-secret-change-me";
+  })();
 
 /**
  * Unified NextAuth options used by both the API handler and server components.
