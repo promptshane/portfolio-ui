@@ -13,7 +13,7 @@ function outDir() {
 export async function GET(
   _: Request,
   { params }: { params: { symbol: string } }
-): Promise<NextResponse> {
+) {
   try {
     const symbol = (params?.symbol || "").trim().toUpperCase();
     if (!symbol) {
@@ -29,10 +29,16 @@ export async function GET(
     const payload = JSON.parse(fs.readFileSync(latestPath, "utf-8")) as any[];
     const row = payload.find((r) => r.symbol === symbol);
     if (!row) {
-      return NextResponse.json({ error: `No latest momentum for ${symbol}` }, { status: 404 });
+      return NextResponse.json(
+        { error: `No latest momentum for ${symbol}` },
+        { status: 404 }
+      );
     }
     return NextResponse.json(row);
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || String(err) }, { status: 500 });
+    return NextResponse.json(
+      { error: err?.message || String(err) },
+      { status: 500 }
+    );
   }
 }
