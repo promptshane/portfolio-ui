@@ -19,8 +19,6 @@ const TOKEN_PATH =
   process.env.GMAIL_TOKEN_PATH || path.join(GMAIL_DIR, "token.json");
 const CREDENTIALS_JSON = process.env.GMAIL_CREDENTIALS_JSON;
 const TOKEN_JSON = process.env.GMAIL_TOKEN_JSON;
-const CREDENTIALS_JSON_BASE64 = process.env.GMAIL_CREDENTIALS_JSON_BASE64;
-const TOKEN_JSON_BASE64 = process.env.GMAIL_TOKEN_JSON_BASE64;
 
 type GmailCredentials = {
   client_id: string;
@@ -97,27 +95,11 @@ async function ensureGmailDir() {
   await fs.promises.mkdir(GMAIL_DIR, { recursive: true });
 }
 
-function decodeEnvValue(envValue?: string): string | undefined {
-  if (!envValue) return undefined;
-  const trimmed = envValue.trim();
-  // Heuristic: if it looks like base64 and decodes to JSON, use that
-  if (/^[A-Za-z0-9+/=]+$/.test(trimmed)) {
-    try {
-      const text = Buffer.from(trimmed, "base64").toString("utf-8");
-      if (text.trim().startsWith("{")) return text;
-    } catch {
-      // fall through to raw
-    }
-  }
-  return envValue;
-}
-
 async function ensureFileFromEnv(envValue: string | undefined, targetPath: string): Promise<boolean> {
   if (!envValue) return false;
   try {
     await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
-    const decoded = decodeEnvValue(envValue);
-    await fs.promises.writeFile(targetPath, decoded ?? envValue, "utf-8");
+    await fs.promises.writeFile(targetPath, envValue, "utf-8");
     return true;
   } catch (err) {
     console.warn(`Failed to write Gmail env file at ${targetPath}:`, err);
@@ -147,20 +129,14 @@ async function loadOAuthClient(): Promise<OAuth2Client> {
 
   // Allow providing credentials/token via env to avoid bundling secrets into the repo.
   // Env-first: if present, write them and use immediately.
-  const wroteCreds =
-    (await ensureFileFromEnv(CREDENTIALS_JSON, CREDENTIALS_PATH)) ||
-    (await ensureFileFromEnv(CREDENTIALS_JSON_BASE64, CREDENTIALS_PATH));
-  const wroteToken =
-    (await ensureFileFromEnv(TOKEN_JSON, TOKEN_PATH)) ||
-    (await ensureFileFromEnv(TOKEN_JSON_BASE64, TOKEN_PATH));
+  const wroteCreds = await ensureFileFromEnv(CREDENTIALS_JSON, CREDENTIALS_PATH);
+  const wroteToken = await ensureFileFromEnv(TOKEN_JSON, TOKEN_PATH);
 
   // Log source (no secrets)
   const source = wroteCreds || wroteToken ? "env" : "file";
   console.log(`[gmail] using ${source} credentials`, {
     credsLen: CREDENTIALS_JSON?.length ?? 0,
-    credsB64Len: CREDENTIALS_JSON_BASE64?.length ?? 0,
     tokenLen: TOKEN_JSON?.length ?? 0,
-    tokenB64Len: TOKEN_JSON_BASE64?.length ?? 0,
     credsPath: CREDENTIALS_PATH,
     tokenPath: TOKEN_PATH,
   });
