@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Explicitly set tracing root to silence monorepo/lockfile warnings
+  outputFileTracingRoot: __dirname,
   outputFileTracingExcludes: {
     "*": [
       "./data/**",

@@ -11,6 +11,11 @@ const keys = [
   "NEXTAUTH_URL",
   "FMP_API_KEY",
   "OPENAI_API_KEY",
+  "FTV_DEV_PASSWORD",
+  "S3_ACCESS_KEY_ID",
+  "S3_SECRET_ACCESS_KEY",
+  "S3_BUCKET",
+  "S3_REGION",
 ];
 
 export async function GET() {
