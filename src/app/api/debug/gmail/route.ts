@@ -32,8 +32,12 @@ function log(msg: string, meta?: Record<string, unknown>) {
 export async function GET() {
   const envCreds = process.env.GMAIL_CREDENTIALS_JSON;
   const envToken = process.env.GMAIL_TOKEN_JSON;
+  const envCredsB64 = process.env.GMAIL_CREDENTIALS_JSON_BASE64;
+  const envTokenB64 = process.env.GMAIL_TOKEN_JSON_BASE64;
   const credsSummary = summarize("GMAIL_CREDENTIALS_JSON", envCreds);
   const tokenSummary = summarize("GMAIL_TOKEN_JSON", envToken);
+  const credsB64Summary = summarize("GMAIL_CREDENTIALS_JSON_BASE64", envCredsB64);
+  const tokenB64Summary = summarize("GMAIL_TOKEN_JSON_BASE64", envTokenB64);
 
   // Prepare a test client if envs exist
   let gmailOk = false;
@@ -51,6 +55,8 @@ export async function GET() {
       // env-first: if provided, write to temp files and use them
       await writeIfEnv("GMAIL_CREDENTIALS_JSON", envCreds, credsPath);
       await writeIfEnv("GMAIL_TOKEN_JSON", envToken, tokenPath);
+      await writeIfEnv("GMAIL_CREDENTIALS_JSON_BASE64", envCredsB64, credsPath);
+      await writeIfEnv("GMAIL_TOKEN_JSON_BASE64", envTokenB64, tokenPath);
       source = "env";
     } else if (fs.existsSync(credsPath) && fs.existsSync(tokenPath)) {
       source = "file";
@@ -89,6 +95,8 @@ export async function GET() {
     env: {
       credentials: credsSummary,
       token: tokenSummary,
+      credentialsB64: credsB64Summary,
+      tokenB64: tokenB64Summary,
     },
     source,
     gmail: {
