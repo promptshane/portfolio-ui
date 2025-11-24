@@ -2,7 +2,8 @@
 // Helper utilities to fetch FMP daily history and resample to weekly bars.
 // Uses adjClose when available; falls back to close.
 
-const FMP_BASE = "https://financialmodelingprep.com/stable";
+// Use the standard v3 API base; the "stable" domain requires higher-tier plans.
+const FMP_BASE = "https://financialmodelingprep.com/api/v3";
 
 export type DailyBar = {
   date: string; // YYYY-MM-DD (UTC)
@@ -69,9 +70,10 @@ export async function fetchDailyHistory(symbol: string): Promise<DailyBar[]> {
   const key = process.env.FMP_API_KEY ?? process.env.NEXT_PUBLIC_FMP_API_KEY;
   if (!key) throw new Error("FMP_API_KEY missing");
 
-  const url = `${FMP_BASE}/historical-price-eod/full?symbol=${encodeURIComponent(
+  // v3 endpoint that works on free/standard keys; `serietype=line` returns close-only.
+  const url = `${FMP_BASE}/historical-price-full/${encodeURIComponent(
     symbol
-  )}&apikey=${key}`;
+  )}?serietype=line&apikey=${key}`;
   const res = await fetch(url, { cache: "no-store" });
   const text = await res.text();
   if (!res.ok) throw new Error(`FMP HTTP ${res.status}: ${text.slice(0, 200)}`);
@@ -173,9 +175,9 @@ export async function fetchIntradayHistory(
   const key = process.env.FMP_API_KEY ?? process.env.NEXT_PUBLIC_FMP_API_KEY;
   if (!key) throw new Error("FMP_API_KEY missing");
 
-  const url = `${FMP_BASE}/historical-chart/${interval}?symbol=${encodeURIComponent(
+  const url = `${FMP_BASE}/historical-chart/${interval}/${encodeURIComponent(
     symbol
-  )}&apikey=${key}`;
+  )}?apikey=${key}`;
   const res = await fetch(url, { cache: "no-store" });
   const text = await res.text();
   if (!res.ok) {

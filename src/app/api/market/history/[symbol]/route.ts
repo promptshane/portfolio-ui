@@ -7,6 +7,7 @@ import {
   fetchIntraday1HourHistory,
 } from "@/app/lib/fmp-history";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic"; // ensure fresh fetch; no static caching
 
 type Params = { params: Promise<{ symbol: string }> };

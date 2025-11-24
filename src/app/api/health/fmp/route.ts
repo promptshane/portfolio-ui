@@ -1,6 +1,8 @@
 // src/app/api/health/fmp/route.ts
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 export async function GET() {
   const key = process.env.FMP_API_KEY;
   const hasKey = Boolean(key);
