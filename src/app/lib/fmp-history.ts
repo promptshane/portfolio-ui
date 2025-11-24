@@ -2,8 +2,8 @@
 // Helper utilities to fetch FMP daily history and resample to weekly bars.
 // Uses adjClose when available; falls back to close.
 
-// Use the standard v3 API base; the "stable" domain requires higher-tier plans.
-const FMP_BASE = "https://financialmodelingprep.com/api/v3";
+// Use the Stable API base; Starter tier supports this for history and intraday.
+const FMP_BASE = "https://financialmodelingprep.com/stable";
 
 export type DailyBar = {
   date: string; // YYYY-MM-DD (UTC)
@@ -61,20 +61,22 @@ function mondayOfWeekUTC(d: Date): Date {
 }
 
 /**
- * Fetch full daily history for a symbol from FMP v3.
- * Try multiple query variants to stay compatible with Starter-tier keys.
+ * Fetch full daily history for a symbol from FMP.
+ * Primary: stable/historical-price-eod/full (works on Starter).
+ * Fallback: v3/historical-price-full with serietype=line.
  */
 export async function fetchDailyHistory(symbol: string): Promise<DailyBar[]> {
   if (!symbol) throw new Error("fetchDailyHistory: symbol required");
   const key = process.env.FMP_API_KEY ?? process.env.NEXT_PUBLIC_FMP_API_KEY;
   if (!key) throw new Error("FMP_API_KEY missing");
 
-  // Try a few variants; collect first successful response.
+  // Try stable first, then v3 variants as fallback.
   const urls = [
-    `${FMP_BASE}/historical-price-full/${encodeURIComponent(
+    `${FMP_BASE}/historical-price-eod/full?symbol=${encodeURIComponent(symbol)}&apikey=${key}`,
+    `https://financialmodelingprep.com/api/v3/historical-price-full/${encodeURIComponent(
       symbol
     )}?serietype=line&timeseries=2000&apikey=${key}`,
-    `${FMP_BASE}/historical-price-full/${encodeURIComponent(
+    `https://financialmodelingprep.com/api/v3/historical-price-full/${encodeURIComponent(
       symbol
     )}?serietype=line&apikey=${key}`,
   ];
@@ -194,9 +196,9 @@ export async function fetchIntradayHistory(
   const key = process.env.FMP_API_KEY ?? process.env.NEXT_PUBLIC_FMP_API_KEY;
   if (!key) throw new Error("FMP_API_KEY missing");
 
-  const url = `${FMP_BASE}/historical-chart/${interval}/${encodeURIComponent(
+  const url = `${FMP_BASE}/historical-chart/${interval}?symbol=${encodeURIComponent(
     symbol
-  )}?apikey=${key}`;
+  )}&apikey=${key}`;
   const res = await fetch(url, { cache: "no-store" });
   const text = await res.text();
   if (!res.ok) {

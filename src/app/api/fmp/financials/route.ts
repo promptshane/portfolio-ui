@@ -76,21 +76,20 @@ export async function GET(req: Request) {
     if (!symbol) return err("Missing symbol");
     const apikey = getApiKey();
 
-    // FMP v3 endpoints (annual, latest-first, we’ll reverse). v3 is included on standard keys;
-    // "stable" often requires higher tiers and can return legacy/forbidden errors.
-    const base = "https://financialmodelingprep.com/api/v3";
+    // FMP stable endpoints (annual, latest-first, we’ll reverse)
+    const base = "https://financialmodelingprep.com/stable";
 
-    const incURL = `${base}/income-statement/${encodeURIComponent(
+    const incURL = `${base}/income-statement?symbol=${encodeURIComponent(
       symbol
-    )}?period=annual&limit=8&apikey=${apikey}`;
+    )}&period=annual&limit=8&apikey=${apikey}`;
 
-    const balURL = `${base}/balance-sheet-statement/${encodeURIComponent(
+    const balURL = `${base}/balance-sheet-statement?symbol=${encodeURIComponent(
       symbol
-    )}?period=annual&limit=8&apikey=${apikey}`;
+    )}&period=annual&limit=8&apikey=${apikey}`;
 
-    const cfsURL = `${base}/cash-flow-statement/${encodeURIComponent(
+    const cfsURL = `${base}/cash-flow-statement?symbol=${encodeURIComponent(
       symbol
-    )}?period=annual&limit=8&apikey=${apikey}`;
+    )}&period=annual&limit=8&apikey=${apikey}`;
 
     const [incRaw, balRaw, cfsRaw] = await Promise.all([
       fetchJSON(incURL),
