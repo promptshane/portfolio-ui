@@ -603,9 +603,9 @@ export default function SettingsPage() {
     if (logoutBusy) return;
     setLogoutBusy(true);
     try {
-      const res = await signOut({ redirect: false, callbackUrl: "/login" });
-      const url = typeof res?.url === "string" && res.url ? res.url : "/login";
-      router.push(url);
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const callbackUrl = `${base}/login`;
+      await signOut({ redirect: true, callbackUrl });
     } catch {
       router.push("/login");
     } finally {

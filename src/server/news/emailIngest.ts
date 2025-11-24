@@ -113,13 +113,13 @@ async function loadOAuthClient(): Promise<OAuth2Client> {
 
   if (!fs.existsSync(CREDENTIALS_PATH)) {
     throw new Error(
-      `Missing Gmail credentials file at ${CREDENTIALS_PATH}. Copy credentials.json from the Gmail project or set GMAIL_CREDENTIALS_PATH.`
+      "Gmail ingest is not configured: missing credentials.json. Set GMAIL_CREDENTIALS_PATH (or place data/gmail/credentials.json) to enable."
     );
   }
 
   if (!fs.existsSync(TOKEN_PATH)) {
     throw new Error(
-      `Missing Gmail token at ${TOKEN_PATH}. Copy token.json from the Gmail project or set GMAIL_TOKEN_PATH.`
+      "Gmail ingest is not configured: missing token.json. Set GMAIL_TOKEN_PATH (or place data/gmail/token.json) to enable."
     );
   }
 

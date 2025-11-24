@@ -577,7 +577,7 @@ export async function evaluateStock(symIn: string, useReal: boolean): Promise<Ev
   const sym = symIn.trim().toUpperCase();
   if (!sym) throw new Error("empty symbol");
 
-  if (useReal) {
+  async function runReal(): Promise<EvalResult> {
     // 0) Profile + stats (best-effort)
     const prof = await fetchFmpProfileAndStats(sym).catch(() => ({} as any));
     const companyName = prof?.name ?? sym;
@@ -751,7 +751,16 @@ export async function evaluateStock(symIn: string, useReal: boolean): Promise<Ev
         emaSlow: momo.emaSlow,
         mlWeights: w,
       },
+      dataSource: "real",
     } as EvalResult;
+  }
+
+  if (useReal) {
+    try {
+      return await runReal();
+    } catch (err) {
+      console.warn(`Real data failed for ${sym}; falling back to mock data.`, err);
+    }
   }
 
   // ---------- mock mode ----------
