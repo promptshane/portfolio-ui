@@ -9,10 +9,12 @@ const MIN_CLEAN_WORDS_FOR_UPLOAD = 80;
 const MAX_LOOKBACK_DAYS = 365;
 const MAX_EMAIL_FETCH = 2000;
 
-const GMAIL_DIR = path.join(process.cwd(), "data", "gmail");
+// Determine a writable Gmail dir. In AWS/Amplify lambdas, only /tmp is writable.
+const GMAIL_DIR =
+  process.env.GMAIL_DIR ||
+  (process.env.NODE_ENV === "production" ? "/tmp/gmail" : path.join(process.cwd(), "data", "gmail"));
 const CREDENTIALS_PATH =
-  process.env.GMAIL_CREDENTIALS_PATH ||
-  path.join(GMAIL_DIR, "credentials.json");
+  process.env.GMAIL_CREDENTIALS_PATH || path.join(GMAIL_DIR, "credentials.json");
 const TOKEN_PATH =
   process.env.GMAIL_TOKEN_PATH || path.join(GMAIL_DIR, "token.json");
 const CREDENTIALS_JSON = process.env.GMAIL_CREDENTIALS_JSON;
@@ -93,12 +95,30 @@ async function ensureGmailDir() {
   await fs.promises.mkdir(GMAIL_DIR, { recursive: true });
 }
 
+function maybeParseBase64(value: string): string {
+  const trimmed = value.trim();
+  // crude base64 sniff: only base64 charset and padded
+  if (/^[A-Za-z0-9+/=\r\n]+$/.test(trimmed)) {
+    try {
+      const buf = Buffer.from(trimmed, "base64");
+      // If decode produced printable JSON-like content, use it.
+      const text = buf.toString("utf-8");
+      if (text.trim().startsWith("{")) return text;
+    } catch {
+      // fall through
+    }
+  }
+  return value;
+}
+
 async function ensureFileFromEnv(envValue: string | undefined, targetPath: string) {
   if (!envValue) return;
   try {
-    await fs.promises.writeFile(targetPath, envValue, "utf-8");
-  } catch {
-    // swallow; downstream checks will emit a clearer message
+    await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
+    const contents = maybeParseBase64(envValue);
+    await fs.promises.writeFile(targetPath, contents, "utf-8");
+  } catch (err) {
+    console.warn(`Failed to write Gmail env file at ${targetPath}:`, err);
   }
 }
 
