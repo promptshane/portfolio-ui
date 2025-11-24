@@ -3,6 +3,8 @@ import prisma from "@/lib/prisma";
 import { hash } from "bcryptjs";
 import { Prisma } from "@prisma/client";
 
+export const runtime = "nodejs";
+
 /**
  * POST /api/auth/register
  * Body:
