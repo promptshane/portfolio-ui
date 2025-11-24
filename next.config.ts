@@ -7,23 +7,17 @@ const nextConfig: NextConfig = {
       "./public/ftv/**",
       "./prisma/**",
       "./sqlite/**",
-      "./server.env.json",
     ],
   },
   outputFileTracingIncludes: {
     "*": [
       "./node_modules/.prisma/client/**",
       "./node_modules/@prisma/client/**",
-      "./server.env.json",
     ],
   },
+  // Ensure native/binary deps are included in traced output for server/app routes
+  serverExternalPackages: ["@prisma/client", "bcryptjs", "@aws-sdk/client-s3"],
   experimental: {
-    // Ensure native/binary deps are included in traced output for server/app routes
-    serverComponentsExternalPackages: [
-      "@prisma/client",
-      "bcryptjs",
-      "@aws-sdk/client-s3",
-    ],
     serverSourceMaps: false,
   },
 };

@@ -8,10 +8,11 @@ frontend:
         - npm ci
         # Ensure Prisma client is generated before the build so it gets traced into lambdas
         - npx prisma generate
-        # Capture server-side env vars (fallback for Lambda runtime) into server.env.json
-        - node scripts/write-server-env.js
     build:
       commands:
+        # Persist auth secrets into .env.production so middleware/NextAuth get the build-time values
+        - rm -f .env.production
+        - env | grep -E '^(NEXTAUTH_SECRET|AUTH_SECRET)=' >> .env.production || true
         - npm run build
         - npx prisma migrate deploy
         # drop caches and sourcemaps to keep artifact under Amplify size limits

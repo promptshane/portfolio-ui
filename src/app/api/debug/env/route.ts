@@ -1,6 +1,5 @@
 // Lightweight env probe to verify runtime variable injection on Amplify
 import { NextResponse } from "next/server";
-import { envSummary } from "@/lib/serverEnv";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,5 +14,17 @@ const keys = [
 ];
 
 export async function GET() {
-  return NextResponse.json({ env: envSummary(keys) });
+  const report = Object.fromEntries(
+    keys.map((k) => {
+      const val = process.env[k];
+      return [
+        k,
+        {
+          present: !!val,
+          length: val?.length ?? 0,
+        },
+      ];
+    })
+  );
+  return NextResponse.json({ env: report });
 }
