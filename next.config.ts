@@ -9,7 +9,19 @@ const nextConfig: NextConfig = {
       "./sqlite/**",
     ],
   },
+  outputFileTracingIncludes: {
+    "*": [
+      "./node_modules/.prisma/client/**",
+      "./node_modules/@prisma/client/**",
+    ],
+  },
   experimental: {
+    // Ensure native/binary deps are included in traced output for server/app routes
+    serverComponentsExternalPackages: [
+      "@prisma/client",
+      "bcryptjs",
+      "@aws-sdk/client-s3",
+    ],
     serverSourceMaps: false,
   },
 };
