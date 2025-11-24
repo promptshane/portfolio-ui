@@ -61,58 +61,77 @@ function mondayOfWeekUTC(d: Date): Date {
 }
 
 /**
- * Fetch full daily history for a symbol from FMP (Stable API).
- * Endpoint: /stable/historical-price-eod/full?symbol=...
- * We prefer adjClose when present; otherwise use close.
+ * Fetch full daily history for a symbol from FMP v3.
+ * Try multiple query variants to stay compatible with Starter-tier keys.
  */
 export async function fetchDailyHistory(symbol: string): Promise<DailyBar[]> {
   if (!symbol) throw new Error("fetchDailyHistory: symbol required");
   const key = process.env.FMP_API_KEY ?? process.env.NEXT_PUBLIC_FMP_API_KEY;
   if (!key) throw new Error("FMP_API_KEY missing");
 
-  // v3 endpoint that works on free/standard keys; `serietype=line` returns close-only.
-  const url = `${FMP_BASE}/historical-price-full/${encodeURIComponent(
-    symbol
-  )}?serietype=line&apikey=${key}`;
-  const res = await fetch(url, { cache: "no-store" });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`FMP HTTP ${res.status}: ${text.slice(0, 200)}`);
+  // Try a few variants; collect first successful response.
+  const urls = [
+    `${FMP_BASE}/historical-price-full/${encodeURIComponent(
+      symbol
+    )}?serietype=line&timeseries=2000&apikey=${key}`,
+    `${FMP_BASE}/historical-price-full/${encodeURIComponent(
+      symbol
+    )}?serietype=line&apikey=${key}`,
+  ];
 
-  let payload: any;
-  try {
-    payload = JSON.parse(text);
-  } catch {
-    throw new Error("FMP returned non-JSON for historical-price-eod/full");
+  const errors: string[] = [];
+
+  for (const url of urls) {
+    const res = await fetch(url, { cache: "no-store" });
+    const text = await res.text();
+    if (!res.ok) {
+      errors.push(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+      continue;
+    }
+
+    let payload: any;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      errors.push("Non-JSON response");
+      continue;
+    }
+
+    const arr: any[] = Array.isArray(payload?.historical)
+      ? payload.historical
+      : Array.isArray(payload)
+      ? payload
+      : [];
+    if (!Array.isArray(arr)) {
+      errors.push("Unexpected payload shape");
+      continue;
+    }
+
+    const out: DailyBar[] = arr
+      .map((r) => {
+        const date = typeof r?.date === "string" ? r.date : null;
+        if (!date) return null;
+        const adjClose = parseNumber(r?.adjClose);
+        const close = parseNumber(r?.close);
+        const volume = parseNumber(r?.volume);
+        if (adjClose === null && close === null) return null;
+        return {
+          date,
+          adjClose: adjClose ?? (close as number),
+          close: (close ?? adjClose) as number,
+          volume: volume ?? null,
+        } as DailyBar;
+      })
+      .filter(Boolean) as DailyBar[];
+
+    out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    if (out.length) return out;
   }
 
-  // Stable returns a direct array; legacy returned { historical: [...] }.
-  const arr: any[] = Array.isArray(payload?.historical)
-    ? payload.historical
-    : Array.isArray(payload)
-    ? payload
-    : [];
-  if (!Array.isArray(arr)) throw new Error("Unexpected FMP history payload shape");
-
-  // Map to DailyBar, filter invalid rows, sort ascending by date.
-  const out: DailyBar[] = arr
-    .map((r) => {
-      const date = typeof r?.date === "string" ? r.date : null;
-      if (!date) return null;
-      const adjClose = parseNumber(r?.adjClose);
-      const close = parseNumber(r?.close);
-      const volume = parseNumber(r?.volume);
-      if (adjClose === null && close === null) return null;
-      return {
-        date,
-        adjClose: adjClose ?? (close as number),
-        close: (close ?? adjClose) as number,
-        volume: volume ?? null,
-      } as DailyBar;
-    })
-    .filter(Boolean) as DailyBar[];
-
-  out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  return out;
+  const msg = errors.length
+    ? `FMP history failed: ${errors.join(" | ")}`
+    : "FMP history failed: no responses";
+  throw new Error(msg);
 }
 
 /**
