@@ -1,9 +1,10 @@
 import { PrismaClient } from "@prisma/client";
+import { readEnv } from "./serverEnv";
 
 const databaseUrl =
-  process.env.DATABASE_URL ??
-  process.env.POSTGRES_URL ??
-  process.env.NEXT_PUBLIC_DATABASE_URL ??
+  readEnv("DATABASE_URL") ??
+  readEnv("POSTGRES_URL") ??
+  readEnv("NEXT_PUBLIC_DATABASE_URL") ??
   null;
 
 if (!databaseUrl) {

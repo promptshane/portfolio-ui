@@ -7,12 +7,14 @@ const nextConfig: NextConfig = {
       "./public/ftv/**",
       "./prisma/**",
       "./sqlite/**",
+      "./server.env.json",
     ],
   },
   outputFileTracingIncludes: {
     "*": [
       "./node_modules/.prisma/client/**",
       "./node_modules/@prisma/client/**",
+      "./server.env.json",
     ],
   },
   experimental: {

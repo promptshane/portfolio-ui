@@ -2,6 +2,8 @@
 // Helper utilities to fetch FMP daily history and resample to weekly bars.
 // Uses adjClose when available; falls back to close.
 
+import { readEnv } from "@/lib/serverEnv";
+
 // Use the standard v3 API base; the "stable" domain requires higher-tier plans.
 const FMP_BASE = "https://financialmodelingprep.com/api/v3";
 
@@ -67,7 +69,9 @@ function mondayOfWeekUTC(d: Date): Date {
  */
 export async function fetchDailyHistory(symbol: string): Promise<DailyBar[]> {
   if (!symbol) throw new Error("fetchDailyHistory: symbol required");
-  const key = process.env.FMP_API_KEY ?? process.env.NEXT_PUBLIC_FMP_API_KEY;
+  const key =
+    readEnv("FMP_API_KEY") ??
+    readEnv("NEXT_PUBLIC_FMP_API_KEY");
   if (!key) throw new Error("FMP_API_KEY missing");
 
   // v3 endpoint that works on free/standard keys; `serietype=line` returns close-only.
@@ -172,7 +176,9 @@ export async function fetchIntradayHistory(
   opts: IntradayHistoryOptions = {}
 ): Promise<IntradayBar[]> {
   if (!symbol) throw new Error("fetchIntradayHistory: symbol required");
-  const key = process.env.FMP_API_KEY ?? process.env.NEXT_PUBLIC_FMP_API_KEY;
+  const key =
+    readEnv("FMP_API_KEY") ??
+    readEnv("NEXT_PUBLIC_FMP_API_KEY");
   if (!key) throw new Error("FMP_API_KEY missing");
 
   const url = `${FMP_BASE}/historical-chart/${interval}/${encodeURIComponent(

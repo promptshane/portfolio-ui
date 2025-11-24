@@ -3,10 +3,11 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import prisma from "@/lib/prisma";
+import { readEnv } from "./serverEnv";
 
 const authSecret =
-  process.env.AUTH_SECRET ??
-  process.env.NEXTAUTH_SECRET ??
+  readEnv("AUTH_SECRET") ??
+  readEnv("NEXTAUTH_SECRET") ??
   // Last-resort fallback to avoid runtime crashes if env injection fails (log a warning).
   (() => {
     console.warn("WARNING: NEXTAUTH_SECRET/AUTH_SECRET missing at runtime. Using insecure fallback.");

@@ -8,6 +8,8 @@ frontend:
         - npm ci
         # Ensure Prisma client is generated before the build so it gets traced into lambdas
         - npx prisma generate
+        # Capture server-side env vars (fallback for Lambda runtime) into server.env.json
+        - node scripts/write-server-env.js
     build:
       commands:
         - npm run build
