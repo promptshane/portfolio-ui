@@ -95,30 +95,15 @@ async function ensureGmailDir() {
   await fs.promises.mkdir(GMAIL_DIR, { recursive: true });
 }
 
-function maybeParseBase64(value: string): string {
-  const trimmed = value.trim();
-  // crude base64 sniff: only base64 charset and padded
-  if (/^[A-Za-z0-9+/=\r\n]+$/.test(trimmed)) {
-    try {
-      const buf = Buffer.from(trimmed, "base64");
-      // If decode produced printable JSON-like content, use it.
-      const text = buf.toString("utf-8");
-      if (text.trim().startsWith("{")) return text;
-    } catch {
-      // fall through
-    }
-  }
-  return value;
-}
-
-async function ensureFileFromEnv(envValue: string | undefined, targetPath: string) {
-  if (!envValue) return;
+async function ensureFileFromEnv(envValue: string | undefined, targetPath: string): Promise<boolean> {
+  if (!envValue) return false;
   try {
     await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
-    const contents = maybeParseBase64(envValue);
-    await fs.promises.writeFile(targetPath, contents, "utf-8");
+    await fs.promises.writeFile(targetPath, envValue, "utf-8");
+    return true;
   } catch (err) {
     console.warn(`Failed to write Gmail env file at ${targetPath}:`, err);
+    return false;
   }
 }
 
@@ -142,9 +127,19 @@ function extractCredentials(
 async function loadOAuthClient(): Promise<OAuth2Client> {
   await ensureGmailDir();
 
-  // Allow providing credentials/token via env to avoid bundling secrets into the repo
-  await ensureFileFromEnv(CREDENTIALS_JSON, CREDENTIALS_PATH);
-  await ensureFileFromEnv(TOKEN_JSON, TOKEN_PATH);
+  // Allow providing credentials/token via env to avoid bundling secrets into the repo.
+  // Env-first: if present, write them and use immediately.
+  const wroteCreds = await ensureFileFromEnv(CREDENTIALS_JSON, CREDENTIALS_PATH);
+  const wroteToken = await ensureFileFromEnv(TOKEN_JSON, TOKEN_PATH);
+
+  // Log source (no secrets)
+  const source = wroteCreds || wroteToken ? "env" : "file";
+  console.log(`[gmail] using ${source} credentials`, {
+    credsLen: CREDENTIALS_JSON?.length ?? 0,
+    tokenLen: TOKEN_JSON?.length ?? 0,
+    credsPath: CREDENTIALS_PATH,
+    tokenPath: TOKEN_PATH,
+  });
 
   if (!fs.existsSync(CREDENTIALS_PATH)) {
     throw new Error(
