@@ -2,11 +2,10 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { redirect } from "next/navigation";
 
 export const runtime = "nodejs";
 
@@ -53,10 +52,6 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const headerList = await headers();
-  const requestUrl = headerList.get("next-url") || "/";
-  const pathname = new URL(requestUrl, "http://localhost").pathname;
-
   const cookieJar = await cookies();
   const cookieTheme = normalizeThemeCookie(
     cookieJar.get("theme")?.value || "default"
@@ -86,15 +81,6 @@ export default async function RootLayout({
     }
   } catch {
     // ignore session lookup failures and fall back to cookie
-  }
-
-  // Require authentication for all app pages except the login route.
-  // This runs server-side so env + NextAuth secrets are available.
-  if (!session && !pathname.startsWith("/login")) {
-    redirect("/login?callbackUrl=" + encodeURIComponent(requestUrl));
-  }
-  if (session && pathname.startsWith("/login")) {
-    redirect("/");
   }
 
   return (
