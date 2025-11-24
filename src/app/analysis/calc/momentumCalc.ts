@@ -756,11 +756,7 @@ export async function evaluateStock(symIn: string, useReal: boolean): Promise<Ev
   }
 
   if (useReal) {
-    try {
-      return await runReal();
-    } catch (err) {
-      console.warn(`Real data failed for ${sym}; falling back to mock data.`, err);
-    }
+    return runReal();
   }
 
   // ---------- mock mode ----------

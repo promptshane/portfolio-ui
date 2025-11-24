@@ -15,6 +15,8 @@ const CREDENTIALS_PATH =
   path.join(GMAIL_DIR, "credentials.json");
 const TOKEN_PATH =
   process.env.GMAIL_TOKEN_PATH || path.join(GMAIL_DIR, "token.json");
+const CREDENTIALS_JSON = process.env.GMAIL_CREDENTIALS_JSON;
+const TOKEN_JSON = process.env.GMAIL_TOKEN_JSON;
 
 type GmailCredentials = {
   client_id: string;
@@ -91,6 +93,15 @@ async function ensureGmailDir() {
   await fs.promises.mkdir(GMAIL_DIR, { recursive: true });
 }
 
+async function ensureFileFromEnv(envValue: string | undefined, targetPath: string) {
+  if (!envValue) return;
+  try {
+    await fs.promises.writeFile(targetPath, envValue, "utf-8");
+  } catch {
+    // swallow; downstream checks will emit a clearer message
+  }
+}
+
 async function readJsonFile<T>(filePath: string): Promise<T> {
   const raw = await fs.promises.readFile(filePath, "utf-8");
   return JSON.parse(raw) as T;
@@ -110,6 +121,10 @@ function extractCredentials(
 
 async function loadOAuthClient(): Promise<OAuth2Client> {
   await ensureGmailDir();
+
+  // Allow providing credentials/token via env to avoid bundling secrets into the repo
+  await ensureFileFromEnv(CREDENTIALS_JSON, CREDENTIALS_PATH);
+  await ensureFileFromEnv(TOKEN_JSON, TOKEN_PATH);
 
   if (!fs.existsSync(CREDENTIALS_PATH)) {
     throw new Error(
