@@ -37,28 +37,33 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Only PDF files are allowed" }, { status: 400 });
   }
 
-  // Convert to Buffer and persist
-  const buf = Buffer.from(await file.arrayBuffer());
-  if (!buf.length) {
-    return NextResponse.json({ ok: false, error: "Empty file" }, { status: 400 });
-  }
-
-  // Optional size guard (e.g., 25MB)
-  const MAX_BYTES = 25 * 1024 * 1024;
-  if (buf.length > MAX_BYTES) {
-    return NextResponse.json({ ok: false, error: "File too large" }, { status: 413 });
-  }
-
-  // Parse (includes ESG fields) — non-blocking for success
-  let parsed: unknown = undefined;
   try {
-    parsed = await parseFtvPdf(buf);
-  } catch {
-    parsed = undefined;
+    // Convert to Buffer and persist
+    const buf = Buffer.from(await file.arrayBuffer());
+    if (!buf.length) {
+      return NextResponse.json({ ok: false, error: "Empty file" }, { status: 400 });
+    }
+
+    // Optional size guard (e.g., 25MB)
+    const MAX_BYTES = 25 * 1024 * 1024;
+    if (buf.length > MAX_BYTES) {
+      return NextResponse.json({ ok: false, error: "File too large" }, { status: 413 });
+    }
+
+    // Parse (includes ESG fields) — non-blocking for success
+    let parsed: unknown = undefined;
+    try {
+      parsed = await parseFtvPdf(buf);
+    } catch {
+      parsed = undefined;
+    }
+
+    // Store the PDF and any parsed fields
+    const meta = await ftvStore.addPdf({ symbol, buffer: buf, originalName: name, parsed } as any);
+
+    return NextResponse.json({ ok: true, latest: meta });
+  } catch (err: any) {
+    const message = err?.message || "Upload failed";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
-
-  // Store the PDF and any parsed fields
-  const meta = await ftvStore.addPdf({ symbol, buffer: buf, originalName: name, parsed } as any);
-
-  return NextResponse.json({ ok: true, latest: meta });
 }
