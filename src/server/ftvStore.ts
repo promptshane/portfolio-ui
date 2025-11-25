@@ -45,11 +45,10 @@ export type FtvDocMeta = {
 type IndexShape = Record<string, FtvDocMeta[]>;
 
 const ROOT = process.cwd();
-// When not using S3, persist under a writable location. In Lambda, /tmp is writable.
+// Prefer a writable tmp path in production lambdas (unless explicitly overridden).
 const LOCAL_ROOT =
-  s3Enabled || process.env.NODE_ENV !== "production"
-    ? ROOT
-    : process.env.FTV_LOCAL_ROOT || "/tmp/ftv";
+  process.env.FTV_LOCAL_ROOT ||
+  (process.env.NODE_ENV === "production" ? "/tmp/ftv" : ROOT);
 const DATA_DIR = path.join(LOCAL_ROOT, "data", "ftv");
 const INDEX_FILE = path.join(DATA_DIR, "index.json");
 const PUBLIC_DIR = path.join(LOCAL_ROOT, "public", "ftv");

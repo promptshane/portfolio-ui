@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Header from "../components/header";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Developer Notes",
+};
 
 type User = {
   id: string;

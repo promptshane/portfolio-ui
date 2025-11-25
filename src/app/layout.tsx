@@ -43,10 +43,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: {
-    default: "Portfolio",
-    template: "%s | Portfolio",
-  },
+  title: "Portfolio",
   description: "Portfolio analysis, notes, news, and settings.",
 };
 

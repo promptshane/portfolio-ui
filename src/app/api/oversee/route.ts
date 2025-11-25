@@ -37,32 +37,47 @@ function getUserId(session: unknown): number | null {
 }
 
 async function listOverseen(uid: number): Promise<OverseenRow[]> {
-  const rows = await prisma.$queryRaw<OverseenRow[]>`
-    SELECT u.id, u.username, u.preferredName
-    FROM "OverseerLink" o
-    JOIN "User" u ON u.id = o."targetId"
-    WHERE o."overseerId" = ${uid}
-    ORDER BY o."createdAt" ASC
-  `;
-  return rows;
+  const links = await prisma.overseerLink.findMany({
+    where: { overseerId: uid },
+    select: {
+      target: {
+        select: { id: true, username: true, preferredName: true },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  return links
+    .map((link) => link.target)
+    .filter((t): t is { id: number; username: string; preferredName: string | null } => !!t)
+    .map((t) => ({
+      id: t.id,
+      username: t.username,
+      preferredName: t.preferredName,
+    }));
 }
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  const uid = getUserId(session);
-  if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const session = await getServerSession(authOptions);
+    const uid = getUserId(session);
+    if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const self = await prisma.user.findUnique({
-    where: { id: uid },
-    select: { id: true, username: true, preferredName: true },
-  });
+    const self = await prisma.user.findUnique({
+      where: { id: uid },
+      select: { id: true, username: true, preferredName: true },
+    });
 
-  const overseen = await listOverseen(uid);
+    const overseen = await listOverseen(uid);
 
-  return NextResponse.json({
-    self,
-    overseen,
-  });
+    return NextResponse.json({
+      self,
+      overseen,
+    });
+  } catch (err) {
+    console.error("Failed to load oversee accounts", err);
+    return NextResponse.json({ error: "Failed to load oversee accounts" }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -162,19 +177,24 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  const uid = getUserId(session);
-  if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const session = await getServerSession(authOptions);
+    const uid = getUserId(session);
+    if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await req.json().catch(() => null);
-  const targetId = Number(body?.targetUserId);
-  if (!targetId || Number.isNaN(targetId)) {
-    return NextResponse.json({ error: "targetUserId required" }, { status: 400 });
+    const body = await req.json().catch(() => null);
+    const targetId = Number(body?.targetUserId);
+    if (!targetId || Number.isNaN(targetId)) {
+      return NextResponse.json({ error: "targetUserId required" }, { status: 400 });
+    }
+
+    await prisma.overseerLink.deleteMany({
+      where: { overseerId: uid, targetId },
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("Failed to remove oversee account", err);
+    return NextResponse.json({ error: "Failed to remove oversee account" }, { status: 500 });
   }
-
-  await prisma.overseerLink.deleteMany({
-    where: { overseerId: uid, targetId },
-  });
-
-  return NextResponse.json({ ok: true });
 }
