@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import React from "react";
+import React, { useEffect } from "react";
 
 type HeaderProps = {
   title?: string;
@@ -35,6 +35,12 @@ export default function Header({
   const pathname = usePathname();
   const router = useRouter();
   const onHome = pathname === "/";
+
+  useEffect(() => {
+    if (title) {
+      document.title = title;
+    }
+  }, [title]);
 
   const homeBtn =
     !onHome ? (

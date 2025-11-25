@@ -98,7 +98,7 @@ export default function NewsPage() {
     try {
       setError(null);
       if (!silent) setLoading(true);
-      const res = await fetch("/api/news/articles");
+      const res = await fetch("/api/news/articles", { credentials: "include" });
       if (!res.ok) {
         throw new Error(`Failed to load news: ${res.status}`);
       }
@@ -304,6 +304,7 @@ export default function NewsPage() {
       const res = await fetch("/api/news/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ type: "refresh", lookbackDays: 7, maxEmails: 100 }),
       });
       const data = await res.json().catch(() => ({}));
