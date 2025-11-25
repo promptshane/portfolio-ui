@@ -5,6 +5,14 @@ const region = process.env.S3_REGION || "us-east-1";
 
 export const s3Enabled = !!bucket;
 
+type PutParams = {
+  key: string;
+  body: Buffer;
+  contentType?: string;
+  tags?: Record<string, string>;
+  metadata?: Record<string, string>;
+};
+
 export function getS3Client() {
   if (!s3Enabled) throw new Error("S3 not configured");
   return new S3Client({
@@ -31,15 +39,39 @@ export async function getObjectBuffer(key: string): Promise<Buffer | null> {
   return Buffer.concat(chunks);
 }
 
-export async function putObjectBuffer(params: { key: string; body: Buffer; contentType?: string }) {
+function buildTagging(tags?: Record<string, string>) {
+  if (!tags) return undefined;
+  const entries = Object.entries(tags)
+    .map(([k, v]) => [k?.trim(), v?.trim()] as const)
+    .filter(([k, v]) => !!k && !!v);
+  if (!entries.length) return undefined;
+  return entries
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
+}
+
+function buildMetadata(meta?: Record<string, string>) {
+  if (!meta) return undefined;
+  const entries = Object.entries(meta)
+    .map(([k, v]) => [k?.trim(), v?.trim()] as const)
+    .filter(([k, v]) => !!k && !!v);
+  if (!entries.length) return undefined;
+  return Object.fromEntries(entries);
+}
+
+export async function putObjectBuffer(params: PutParams) {
   if (!s3Enabled) return;
   const client = getS3Client();
+  const Tagging = buildTagging(params.tags);
+  const Metadata = buildMetadata(params.metadata);
   await client.send(
     new PutObjectCommand({
       Bucket: bucket,
       Key: params.key,
       Body: params.body,
       ContentType: params.contentType,
+      ...(Tagging ? { Tagging } : {}),
+      ...(Metadata ? { Metadata } : {}),
     })
   );
 }

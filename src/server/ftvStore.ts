@@ -102,6 +102,8 @@ async function writeIndex(idx: IndexShape) {
       key: S3_INDEX_KEY,
       body: Buffer.from(payload, "utf8"),
       contentType: "application/json",
+      tags: { section: "ftv", kind: "index" },
+      metadata: { section: "ftv", kind: "index" },
     });
     return;
   }
@@ -123,6 +125,8 @@ async function writePdfFile(symbol: string, fileBuf: Buffer, originalName?: stri
       key,
       body: fileBuf,
       contentType: "application/pdf",
+      tags: { section: "ftv", kind: "pdf", symbol: sym },
+      metadata: { section: "ftv", kind: "pdf", symbol: sym },
     });
     const bucket = process.env.S3_BUCKET;
     const region = process.env.S3_REGION || "us-east-1";

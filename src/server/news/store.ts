@@ -22,6 +22,17 @@ function generateArticleId(buffer: Buffer): string {
   return hash.slice(0, 40);
 }
 
+function buildLocalCandidates(storedPath: string): string[] {
+  if (path.isAbsolute(storedPath)) {
+    return [storedPath];
+  }
+  // Support both legacy relative paths (data/news-pdfs/...) and the newer key-only format (news-pdfs/...)
+  return [
+    path.join(process.cwd(), storedPath),
+    path.join(process.cwd(), "data", storedPath),
+  ];
+}
+
 export async function addPdfFromBuffer(
   buffer: Buffer,
   originalFilename: string
@@ -38,15 +49,18 @@ export async function addPdfFromBuffer(
 
   const storedExtension = determineStoredExtension(originalFilename);
   const key = `news-pdfs/${id}${storedExtension}`;
+  const relativePath = path.join("data", "news-pdfs", `${id}${storedExtension}`);
+  const storedPathForDb = s3Enabled ? key : relativePath;
 
   if (s3Enabled) {
     await putObjectBuffer({
       key,
       body: buffer,
       contentType: storedExtension === ".txt" ? "text/plain" : "application/pdf",
+      tags: { section: "news", kind: "article-pdf" },
+      metadata: { section: "news", kind: "article-pdf", articleId: id },
     });
   } else {
-    const relativePath = path.join("data", "news-pdfs", `${id}${storedExtension}`);
     const absolutePath = path.join(process.cwd(), relativePath);
     await fs.promises.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.promises.writeFile(absolutePath, buffer);
@@ -56,7 +70,7 @@ export async function addPdfFromBuffer(
     data: {
       id,
       originalFilename,
-      pdfPath: key,
+      pdfPath: storedPathForDb,
     },
   });
 
@@ -91,10 +105,16 @@ export async function readPdfBuffer(id: string): Promise<Buffer> {
     return buf;
   }
 
-  const storedPath = path.isAbsolute(article.pdfPath)
-    ? article.pdfPath
-    : path.join(process.cwd(), article.pdfPath);
-  return await fs.promises.readFile(storedPath);
+  const candidates = buildLocalCandidates(article.pdfPath);
+  for (const candidate of candidates) {
+    try {
+      return await fs.promises.readFile(candidate);
+    } catch {
+      // try next candidate
+    }
+  }
+
+  throw new Error(`PDF not found on local disk for id=${id}`);
 }
 
 export async function deletePdf(id: string): Promise<void> {
@@ -104,13 +124,14 @@ export async function deletePdf(id: string): Promise<void> {
 
   if (article) {
     // Best-effort local cleanup; S3 cleanup can be handled separately via lifecycle or manual delete.
-    try {
-      const storedPath = path.isAbsolute(article.pdfPath)
-        ? article.pdfPath
-        : path.join(process.cwd(), article.pdfPath);
-      await fs.promises.unlink(storedPath);
-    } catch {
-      // ignore if file is already gone
+    const candidates = buildLocalCandidates(article.pdfPath);
+    for (const candidate of candidates) {
+      try {
+        await fs.promises.unlink(candidate);
+        break;
+      } catch {
+        // ignore if file is already gone
+      }
     }
   }
 
