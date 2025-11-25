@@ -182,7 +182,7 @@ export default function PortfolioPage() {
       try {
         setOwnersLoading(true);
         setOwnersError(null);
-        const res = await fetch("/api/oversee", { cache: "no-store" });
+        const res = await fetch("/api/oversee", { cache: "no-store", credentials: "include" });
         if (res.status === 401) {
           if (!cancelled) {
             setOwners([]);
@@ -236,7 +236,7 @@ export default function PortfolioPage() {
         setNotice(null);
         const url =
           selectedOwnerId != null ? `/api/portfolio?ownerId=${selectedOwnerId}` : "/api/portfolio";
-        const res = await fetch(url, { cache: "no-store" });
+        const res = await fetch(url, { cache: "no-store", credentials: "include" });
         if (!res.ok) {
           setNotice(`Load failed (${res.status})`);
           return;

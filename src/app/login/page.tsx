@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { signIn } from "next-auth/react";
 
 // format "(123) 456-7890" as the user types (US-style)
@@ -30,6 +30,11 @@ export default function LoginPage() {
 
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const usernameRef = useRef<HTMLInputElement>(null);
+  const preferredRef = useRef<HTMLInputElement>(null);
+  const phoneRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLInputElement>(null);
 
   const signupDisabled = useMemo(() => {
     if (!username.trim() || !password || !confirm) return true;
@@ -99,6 +104,39 @@ export default function LoginPage() {
     }
   }
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, field: string) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (mode === "login") {
+      if (field === "username") {
+        passwordRef.current?.focus();
+      } else if (field === "password") {
+        void doLogin();
+      }
+      return;
+    }
+    // signup flow sequence
+    if (field === "username") {
+      if (preferredRef.current) return preferredRef.current.focus();
+      if (phoneRef.current) return phoneRef.current.focus();
+      return passwordRef.current?.focus();
+    }
+    if (field === "preferred") {
+      if (phoneRef.current) return phoneRef.current.focus();
+      return passwordRef.current?.focus();
+    }
+    if (field === "phone") {
+      return passwordRef.current?.focus();
+    }
+    if (field === "password") {
+      if (confirmRef.current) return confirmRef.current.focus();
+      return void doSignup();
+    }
+    if (field === "confirm") {
+      return void doSignup();
+    }
+  };
+
   return (
     <main className="min-h-screen bg-neutral-900 text-white px-6 py-10 flex items-center justify-center">
       <div className="w-full max-w-md bg-neutral-800 rounded-2xl border border-neutral-700 p-6 shadow">
@@ -127,8 +165,10 @@ export default function LoginPage() {
               className="w-full px-3 py-2 rounded-lg bg-black/80 border border-neutral-700"
               value={username}
               onChange={(e) => setUsername(e.target.value.toLowerCase())}
+              onKeyDown={(e) => handleKeyDown(e, "username")}
               placeholder="yourname"
               autoComplete={mode === "login" ? "username" : "new-username"}
+              ref={usernameRef}
             />
           </div>
 
@@ -141,7 +181,9 @@ export default function LoginPage() {
                   className="w-full px-3 py-2 rounded-lg bg-black/80 border border-neutral-700"
                   value={preferredName}
                   onChange={(e) => setPreferredName(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, "preferred")}
                   placeholder="(optional)"
+                  ref={preferredRef}
                 />
               </div>
 
@@ -152,9 +194,11 @@ export default function LoginPage() {
                   className="w-full px-3 py-2 rounded-lg bg-black/80 border border-neutral-700"
                   value={phone}
                   onChange={(e) => setPhone(formatPhone(e.target.value))}
+                  onKeyDown={(e) => handleKeyDown(e, "phone")}
                   placeholder="(123) 456-7890"
                   inputMode="tel"
                   autoComplete="tel"
+                  ref={phoneRef}
                 />
               </div>
             </>
@@ -167,9 +211,11 @@ export default function LoginPage() {
               className="w-full px-3 py-2 rounded-lg bg-black/80 border border-neutral-700"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => handleKeyDown(e, "password")}
               type="password"
               placeholder="********"
               autoComplete={mode === "login" ? "current-password" : "new-password"}
+              ref={passwordRef}
             />
             {mode === "signup" && password && password.length < 6 && (
               <div className="text-xs text-yellow-400 mt-1">At least 6 characters</div>
@@ -180,14 +226,16 @@ export default function LoginPage() {
           {mode === "signup" && (
             <div>
               <label className="block text-sm text-neutral-300 mb-1">Confirm password</label>
-              <input
-                className="w-full px-3 py-2 rounded-lg bg-black/80 border border-neutral-700"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                type="password"
-                placeholder="********"
-                autoComplete="new-password"
-              />
+                <input
+                  className="w-full px-3 py-2 rounded-lg bg-black/80 border border-neutral-700"
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, "confirm")}
+                  type="password"
+                  placeholder="********"
+                  autoComplete="new-password"
+                  ref={confirmRef}
+                />
               {confirm && confirm !== password && (
                 <div className="text-xs text-red-400 mt-1">Passwords do not match</div>
               )}

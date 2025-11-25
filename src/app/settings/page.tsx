@@ -140,7 +140,7 @@ export default function SettingsPage() {
     }
     (async () => {
       try {
-        const res = await fetch("/api/user/profile", { cache: "no-store" });
+        const res = await fetch("/api/user/profile", { cache: "no-store", credentials: "include" });
         if (!res.ok) throw new Error("profile fetch failed");
         const data = await res.json();
         if (!cancelled) {
@@ -324,7 +324,7 @@ export default function SettingsPage() {
     try {
       setOverseeLoading(true);
       setOverseeError(null);
-      const res = await fetch("/api/oversee", { cache: "no-store" });
+      const res = await fetch("/api/oversee", { cache: "no-store", credentials: "include" });
       if (res.status === 401) {
         setOverseenAccounts([]);
         setOverseeError("Please sign in to manage oversee accounts.");
@@ -360,6 +360,7 @@ export default function SettingsPage() {
       const res = await fetch("/api/oversee", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           action: "link",
           username: normalizedUsername,
@@ -399,6 +400,7 @@ export default function SettingsPage() {
       const res = await fetch("/api/oversee", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           action: "create",
           username: normalizedUsername,
@@ -429,6 +431,7 @@ export default function SettingsPage() {
       await fetch("/api/oversee", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ targetUserId }),
       });
       await refreshOversee();
@@ -462,7 +465,10 @@ export default function SettingsPage() {
     let active = true;
     (async () => {
       try {
-        const res = await fetch("/api/user/verified-emails", { cache: "no-store" });
+        const res = await fetch("/api/user/verified-emails", {
+          cache: "no-store",
+          credentials: "include",
+        });
         if (!res.ok || !active) return;
         const data = (await res.json()) as { emails?: string[] };
         if (!active) return;
@@ -493,6 +499,7 @@ export default function SettingsPage() {
       const res = await fetch("/api/user/verified-emails", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ emails }),
       });
       const data = await res.json().catch(() => ({}));
@@ -603,9 +610,8 @@ export default function SettingsPage() {
     if (logoutBusy) return;
     setLogoutBusy(true);
     try {
-      const base = typeof window !== "undefined" ? window.location.origin : "";
-      const callbackUrl = `${base}/login`;
-      await signOut({ redirect: true, callbackUrl });
+      await signOut({ redirect: false });
+      router.replace("/login");
     } catch {
       router.push("/login");
     } finally {
