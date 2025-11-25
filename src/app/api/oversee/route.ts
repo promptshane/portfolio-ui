@@ -81,16 +81,16 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  const uid = getUserId(session);
-  if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const body = (await req.json().catch(() => null)) as OverseerAction | null;
-  if (!body || typeof body !== "object" || !("action" in body)) {
-    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-  }
-
   try {
+    const session = await getServerSession(authOptions);
+    const uid = getUserId(session);
+    if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const body = (await req.json().catch(() => null)) as OverseerAction | null;
+    if (!body || typeof body !== "object" || !("action" in body)) {
+      return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+    }
+
     if (body.action === "link") {
       const username = normalizeUsername(body.username || "");
       const password = body.password || "";
@@ -166,6 +166,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
   } catch (err) {
+    console.error("Failed to upsert oversee account", err);
     const message =
       (err as { code?: string })?.code === "P2002"
         ? "Account already added"
