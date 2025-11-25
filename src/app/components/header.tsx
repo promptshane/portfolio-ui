@@ -37,9 +37,24 @@ export default function Header({
   const onHome = pathname === "/";
 
   useEffect(() => {
-    if (title) {
-      document.title = title;
+    if (!title) return;
+    const base = "Portfolio";
+    // If on analysis with a ticker in the URL (query or pathname), append it
+    let tabTitle = title;
+    try {
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        const ticker =
+          url.searchParams.get("ticker") ||
+          url.pathname.split("/").filter(Boolean).at(-1);
+        if (ticker && title.toLowerCase() === "analysis") {
+          tabTitle = `${ticker.toUpperCase()} | Analysis`;
+        }
+      }
+    } catch {
+      /* ignore */
     }
+    document.title = `${tabTitle} | ${base}`;
   }, [title]);
 
   const homeBtn =
