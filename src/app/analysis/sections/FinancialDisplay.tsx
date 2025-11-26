@@ -75,6 +75,136 @@ type Props = {
 };
 
 export default function FinancialDisplay({ result, activeFS, setActiveFS }: Props) {
+  const [ratios, setRatios] = useState<Record<string, number> | null>(null);
+  const [ratiosError, setRatiosError] = useState<string | null>(null);
+  const [ratiosLoading, setRatiosLoading] = useState(false);
+  const [showRatios, setShowRatios] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setRatiosLoading(true);
+      setRatiosError(null);
+      try {
+        const res = await fetch(`/api/fmp/ratios-ttm?symbol=${encodeURIComponent(result.sym)}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`);
+        const rec = Array.isArray(data) && data.length ? data[0] : data?.[0] ?? data;
+        if (!rec || typeof rec !== "object") throw new Error("No ratios returned");
+        if (!cancelled) setRatios(rec as Record<string, number>);
+      } catch (err: any) {
+        if (!cancelled) setRatiosError(err?.message || "Failed to load ratios");
+        if (!cancelled) setRatios(null);
+      } finally {
+        if (!cancelled) setRatiosLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [result.sym]);
+
+  const RATIO_LABELS: Record<string, string> = {
+    grossProfitMargin: "Gross Profit Margin",
+    operatingProfitMargin: "Operating Profit Margin",
+    netProfitMargin: "Net Profit Margin",
+    returnOnEquity: "ROE",
+    returnOnAssets: "ROA",
+    returnOnCapitalEmployed: "ROCE",
+    currentRatio: "Current Ratio",
+    quickRatio: "Quick Ratio",
+    cashRatio: "Cash Ratio",
+    debtEquityRatio: "Debt/Equity",
+    debtRatio: "Debt Ratio",
+    interestCoverage: "Interest Coverage",
+    cashFlowToDebtRatio: "CF to Debt",
+    assetTurnover: "Asset Turnover",
+    inventoryTurnover: "Inventory Turnover",
+    receivablesTurnover: "Receivables Turnover",
+    daysOfSalesOutstanding: "Days Sales Outstanding",
+    daysOfInventoryOutstanding: "Days Inventory Outstanding",
+    daysOfPayablesOutstanding: "Days Payables Outstanding",
+    cashConversionCycle: "Cash Conversion Cycle",
+    operatingCashFlowSalesRatio: "OCF / Sales",
+    freeCashFlowOperatingCashFlowRatio: "FCF / OCF",
+    operatingCashFlowPerShare: "OCF / Share",
+    freeCashFlowPerShare: "FCF / Share",
+    cashPerShare: "Cash / Share",
+    priceEarningsRatio: "P/E",
+    priceToSalesRatio: "P/S",
+    priceToBookRatio: "P/B",
+    enterpriseValueMultiple: "EV / EBITDA",
+    priceToFreeCashFlowsRatio: "P/FCF",
+    dividendYield: "Dividend Yield",
+    priceEarningsToGrowthRatio: "PEG",
+    payoutRatio: "Payout Ratio",
+    dividendPayoutRatio: "Dividend Payout",
+  };
+
+  const ratioGroups: { title: string; keys: string[] }[] = useMemo(
+    () => [
+      { title: "Profitability", keys: ["grossProfitMargin", "operatingProfitMargin", "netProfitMargin"] },
+      { title: "Returns", keys: ["returnOnEquity", "returnOnAssets", "returnOnCapitalEmployed"] },
+      { title: "Liquidity", keys: ["currentRatio", "quickRatio", "cashRatio"] },
+      { title: "Leverage / Solvency", keys: ["debtEquityRatio", "debtRatio", "interestCoverage", "cashFlowToDebtRatio"] },
+      {
+        title: "Efficiency",
+        keys: [
+          "assetTurnover",
+          "inventoryTurnover",
+          "receivablesTurnover",
+          "daysOfSalesOutstanding",
+          "daysOfInventoryOutstanding",
+          "daysOfPayablesOutstanding",
+          "cashConversionCycle",
+        ],
+      },
+      { title: "Cash-flow quality", keys: ["operatingCashFlowSalesRatio", "freeCashFlowOperatingCashFlowRatio"] },
+      { title: "Per-share", keys: ["operatingCashFlowPerShare", "freeCashFlowPerShare", "cashPerShare"] },
+      {
+        title: "Valuation",
+        keys: [
+          "priceEarningsRatio",
+          "priceToSalesRatio",
+          "priceToBookRatio",
+          "enterpriseValueMultiple",
+          "priceToFreeCashFlowsRatio",
+          "dividendYield",
+          "priceEarningsToGrowthRatio",
+          "payoutRatio",
+          "dividendPayoutRatio",
+        ],
+      },
+    ],
+    []
+  );
+
+  const formatRatioValue = (key: string, value?: number) => {
+    if (value === undefined || value === null || Number.isNaN(value)) return "—";
+    const pctKeys = new Set([
+      "grossProfitMargin",
+      "operatingProfitMargin",
+      "netProfitMargin",
+      "returnOnEquity",
+      "returnOnAssets",
+      "returnOnCapitalEmployed",
+      "dividendYield",
+      "payoutRatio",
+      "dividendPayoutRatio",
+    ]);
+    const dayKeys = new Set([
+      "daysOfSalesOutstanding",
+      "daysOfInventoryOutstanding",
+      "daysOfPayablesOutstanding",
+      "cashConversionCycle",
+    ]);
+    if (pctKeys.has(key)) return `${(value * 100).toFixed(1)}%`;
+    if (dayKeys.has(key)) return `${value.toFixed(1)}d`;
+    if (key.toLowerCase().includes("perShare".toLowerCase())) return `$${value.toFixed(2)}`;
+    if (key === "dividendYield") return `${(value * 100).toFixed(2)}%`;
+    return value.toFixed(2);
+  };
+
   // Robust check: consider "no financials" when **all** finDots series are empty (common for ETFs)
   const hasFinancial = (() => {
     const d = result.finDots;
@@ -255,6 +385,52 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
             );
           })()}
         </svg>
+      </div>
+
+      {/* Key Financial Ratios */}
+      <div className="bg-neutral-800 rounded-2xl p-4 border border-neutral-700">
+        <button
+          type="button"
+          onClick={() => setShowRatios((v) => !v)}
+          className="w-full flex items-center justify-between text-left"
+          aria-expanded={showRatios}
+        >
+          <span className="text-sm text-neutral-300">Key Financial Ratios</span>
+          <span className={`text-neutral-400 text-xs transition-transform ${showRatios ? "rotate-180" : ""}`}>
+            ▾
+          </span>
+        </button>
+
+        {showRatios && (
+          <div className="mt-3 space-y-3">
+            {ratiosLoading && <div className="text-sm text-neutral-400">Loading ratios…</div>}
+            {ratiosError && <div className="text-sm text-[var(--bad-300)]">{ratiosError}</div>}
+            {!ratiosLoading && !ratiosError && ratios && (
+              ratioGroups.map((group) => {
+                const rows = group.keys
+                  .map((k) => ({
+                    key: k,
+                    value: ratios[k],
+                  }))
+                  .filter((r) => r.value !== undefined && r.value !== null);
+                if (!rows.length) return null;
+                return (
+                  <div key={group.title} className="border border-neutral-700 rounded-xl p-3">
+                    <div className="text-xs uppercase tracking-wide text-neutral-400 mb-2">{group.title}</div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2 text-sm">
+                      {rows.map((r) => (
+                        <div key={r.key} className="flex items-center justify-between gap-2">
+                          <span className="text-neutral-400">{RATIO_LABELS[r.key] ?? r.key}</span>
+                          <span className="text-neutral-100 tabular-nums">{formatRatioValue(r.key, r.value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
       </div>
 
       {/* Cards */}

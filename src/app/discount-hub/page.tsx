@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import Header from "../components/header";
 import type { DiscountPositionDto } from "@/types/discount";
 
@@ -43,7 +42,6 @@ const badgeColors: Record<string, string> = {
 const LIST_COUNTS = [10, 25, 50, 100];
 
 export default function DiscountHubPage() {
-  const router = useRouter();
   const [latest, setLatest] = useState<DiscountPositionDto[]>([]);
   const [history, setHistory] = useState<Record<string, DiscountPositionDto[]>>({});
   const [loading, setLoading] = useState(true);
@@ -151,7 +149,9 @@ export default function DiscountHubPage() {
                 <button
                   key={row.symbol}
                   type="button"
-                  onClick={() => router.push(`/analysis?ticker=${encodeURIComponent(row.symbol)}`)}
+                  onClick={() =>
+                    window.open(`/analysis?ticker=${encodeURIComponent(row.symbol)}`, "_blank", "noopener,noreferrer")
+                  }
                   className="w-full rounded-xl border border-neutral-800 bg-neutral-900/60 px-3 py-2 text-left hover:border-[var(--highlight-400)] transition-colors"
                 >
                   <div className="flex items-center justify-between gap-3">

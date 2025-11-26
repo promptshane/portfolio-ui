@@ -69,7 +69,7 @@ export default function HomeClient() {
         />
         <Card title="Options" href="#" locked description="Find ideal contracts by edge & payoff" />
         <Card title="Notes" href="/notes" description="Store investment notes" />
-        <Card title="Crypto" href="#" locked description="Track coins, allocations & risk" />
+        <Card title="Retirement" href="/retirement" description="Project savings and withdrawals" />
         <Card title="Settings" href="/settings" description="Profile & preferences" />
       </div>
     </main>

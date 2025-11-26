@@ -31,29 +31,41 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Missing FMP_API_KEY" }, { status: 500 });
   }
 
-  const url = `https://financialmodelingprep.com/api/v4/esg-environmental-social-governance-data?symbol=${encodeURIComponent(
-    symbol
-  )}&limit=1&apikey=${key}`;
-
   try {
-    const res = await fetch(url, { cache: "no-store" });
-    const text = await res.text();
-    if (!res.ok) {
-      throw new Error(`FMP ESG HTTP ${res.status}: ${text.slice(0, 200)}`);
+    const endpoints = [
+      `https://financialmodelingprep.com/api/v4/esg-environmental-social-governance-data?symbol=${encodeURIComponent(
+        symbol
+      )}&limit=1&apikey=${key}`,
+      `https://financialmodelingprep.com/api/v3/esg-environmental-social-governance-data/${encodeURIComponent(
+        symbol
+      )}?limit=1&apikey=${key}`,
+    ];
+
+    let data: any = null;
+    let lastErr: string | null = null;
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        const text = await res.text();
+        if (!res.ok) {
+          lastErr = `FMP ESG HTTP ${res.status}: ${text.slice(0, 120)}`;
+          continue;
+        }
+        data = JSON.parse(text);
+        break;
+      } catch (err: any) {
+        lastErr = err?.message || String(err);
+      }
     }
 
-    let json: any;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      throw new Error("FMP ESG returned non-JSON");
-    }
-
-    if (!Array.isArray(json) || !json.length) {
+    if (!Array.isArray(data) || !data.length) {
+      if (lastErr) {
+        throw new Error(lastErr);
+      }
       return NextResponse.json({ ok: true, esgRisk: null, esgCategory: null, asOf: null });
     }
 
-    const rec: EsgRecord = json[0];
+    const rec: EsgRecord = data[0];
     const score =
       rec.totalEsg ??
       rec.esgScore ??

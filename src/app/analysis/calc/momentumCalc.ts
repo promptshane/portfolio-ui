@@ -582,6 +582,19 @@ export async function evaluateStock(symIn: string, useReal: boolean): Promise<Ev
     const prof = await fetchFmpProfileAndStats(sym).catch(() => ({} as any));
     const companyName = prof?.name ?? sym;
 
+    // 0b) Live quote (best-effort, shared with other screens)
+    let livePrice: number | null = null;
+    try {
+      const qRes = await fetch(`/api/market/quotes?symbols=${encodeURIComponent(sym)}`, { cache: "no-store" });
+      if (qRes.ok) {
+        const qData = await qRes.json();
+        const px = qData?.data?.[sym]?.price;
+        if (Number.isFinite(px)) livePrice = Number(px);
+      }
+    } catch {
+      /* ignore live quote miss */
+    }
+
     // 1) MAX history (enforced daily via fetchHistory)
     const hist = await fetchHistory(sym);
     if (hist.length < 10) throw new Error("not enough history");
@@ -635,7 +648,7 @@ export async function evaluateStock(symIn: string, useReal: boolean): Promise<Ev
     const compML = momo.scoreMomentum;
 
     // 6) Header stats
-    const last = prices[prices.length - 1];
+    const last = livePrice ?? prices[prices.length - 1];
     const prev = prices[Math.max(0, prices.length - 2)];
     const changeAbs = last - prev;
     const changePct = prev === 0 ? 0 : (changeAbs / prev) * 100;
