@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Header from "../components/header";
 import type { DiscountPositionDto } from "@/types/discount";
 
@@ -39,11 +40,15 @@ const badgeColors: Record<string, string> = {
   SELL: "bg-[color:var(--bad-500)/0.18] text-[var(--bad-200)] border-[color:var(--bad-500)/0.5]",
 };
 
+const LIST_COUNTS = [10, 25, 50, 100];
+
 export default function DiscountHubPage() {
+  const router = useRouter();
   const [latest, setLatest] = useState<DiscountPositionDto[]>([]);
   const [history, setHistory] = useState<Record<string, DiscountPositionDto[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [listCount, setListCount] = useState<number>(10);
 
   useEffect(() => {
     let aborted = false;
@@ -70,6 +75,26 @@ export default function DiscountHubPage() {
     };
   }, []);
 
+  const tickerHighlights = useMemo(() => {
+    return latest
+      .map((item) => {
+        const price = item.priceUsed ?? item.livePrice ?? item.currentPrice ?? null;
+        const fv = item.fairValue ?? null;
+        if (price == null || fv == null) return null;
+        const discountPct = ((fv - price) / price) * 100;
+        return {
+          symbol: item.symbol,
+          name: item.name ?? undefined,
+          discountPct,
+          fairValue: fv,
+          price,
+          priceSource: item.priceSource,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => !!r)
+      .sort((a, b) => b.discountPct - a.discountPct);
+  }, [latest]);
+
   return (
     <main className="min-h-screen bg-neutral-900 text-white px-6 py-8">
       <Header title="Discount Hub" subtitle="Buy/Hold/Sell notes from recent issues" />
@@ -81,6 +106,73 @@ export default function DiscountHubPage() {
             for each ticker. Older entries stay archived under each symbol for context.
           </p>
         </div>
+
+        {/* Top discounts list */}
+        <section className="rounded-2xl border border-neutral-800 bg-neutral-825 p-4 text-sm text-neutral-200">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-white">Most discounted tickers</h3>
+              <p className="text-xs text-neutral-400">
+                Live price (FMP) when available, otherwise article price. Sorted by discount vs FTV.
+              </p>
+            </div>
+            {!loading && !!tickerHighlights.length && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-neutral-400">Show</span>
+                {LIST_COUNTS.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setListCount(n)}
+                    className={`rounded-md border px-2 py-1 ${
+                      listCount === n
+                        ? "border-[var(--highlight-400)] text-[var(--highlight-100)]"
+                        : "border-neutral-700 text-neutral-300 hover:border-[var(--highlight-400)]"
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="mt-3 rounded-xl border border-neutral-800 bg-black/30 px-3 py-2 text-neutral-300">
+              Loading discounts…
+            </div>
+          ) : !tickerHighlights.length ? (
+            <div className="mt-3 rounded-xl border border-neutral-800 bg-black/30 px-3 py-2 text-neutral-400">
+              No FTV discounts yet.
+            </div>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {tickerHighlights.slice(0, listCount).map((row) => (
+                <button
+                  key={row.symbol}
+                  type="button"
+                  onClick={() => router.push(`/analysis?ticker=${encodeURIComponent(row.symbol)}`)}
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900/60 px-3 py-2 text-left hover:border-[var(--highlight-400)] transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-semibold tracking-wide">{row.symbol}</span>
+                      {row.name && <span className="text-xs text-neutral-500">{row.name}</span>}
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-semibold text-[var(--good-200)]">
+                        {row.discountPct.toFixed(1)}%
+                      </div>
+                      <div className="text-[11px] text-neutral-500">
+                        FV {fmtMoney(row.fairValue)} • Price {fmtMoney(row.price)}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
 
         {loading ? (
           <div className="rounded-2xl border border-neutral-800 bg-neutral-825 p-4 text-neutral-300">
@@ -124,7 +216,11 @@ export default function DiscountHubPage() {
 
                   <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-neutral-200">
                     <Stat label="Entry" value={fmtMoney(item.entryPrice)} helper={fmtDate(item.entryDate)} />
-                    <Stat label="Current" value={fmtMoney(item.currentPrice)} helper={fmtPct(item.returnPct)} />
+                    <Stat
+                      label="Current"
+                      value={fmtMoney(item.priceUsed ?? item.livePrice ?? item.currentPrice)}
+                      helper={fmtPct(item.liveReturnPct ?? item.returnPct)}
+                    />
                     <Stat label="Fair Value" value={fmtMoney(item.fairValue)} />
                     <Stat label="Stop" value={fmtMoney(item.stopPrice)} />
                     <Stat label="Allocation" value={item.allocation != null ? `${item.allocation.toFixed(1)}%` : "—"} />

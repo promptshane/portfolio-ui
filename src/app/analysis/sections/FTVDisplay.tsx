@@ -5,16 +5,24 @@ import { useEffect, useRef, useState } from "react";
 import { EvalResult, dotClass, FtvDocMeta } from "../shared";
 import { getFTVData } from "../calc/ftvCalc";
 import FTVTiles from "./FTVTiles";
+import type { DiscountPositionDto } from "@/types/discount";
 
 type Props = { result: EvalResult };
 
 export default function FTVDisplay({ result }: Props) {
   // ---------------- Dev controls + metadata ----------------
   const [isDev, setIsDev] = useState(false);
-  const [latest, setLatest] = useState<FtvDocMeta | undefined>(undefined);
+  const [latest, setLatest] = useState<FtvDocMeta | undefined>(undefined); // Morningstar / uploaded PDF
+  const [discountLatest, setDiscountLatest] = useState<DiscountPositionDto | null>(null); // Discount Hub FTV fallback
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [discountErr, setDiscountErr] = useState<string | null>(null);
   const [docsLoaded, setDocsLoaded] = useState(false); // track fetch completion to avoid flicker
+  const [esgOverride, setEsgOverride] = useState<{
+    risk: number | null;
+    category: string | null;
+    asOf: string | null;
+  } | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const sym = result.sym;
@@ -39,6 +47,28 @@ export default function FTVDisplay({ result }: Props) {
 
   useEffect(() => {
     fetchDocs();
+    setDiscountLatest(null);
+    setEsgOverride(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sym]);
+
+  async function fetchDiscount() {
+    try {
+      setDiscountErr(null);
+      const res = await fetch(`/api/discounts/${encodeURIComponent(sym)}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data?.error || "Failed to fetch discount hub data");
+      }
+      setDiscountLatest(data.latest ?? null);
+    } catch (e: any) {
+      setDiscountErr(e?.message || "Failed to load discount hub data");
+      setDiscountLatest(null);
+    }
+  }
+
+  useEffect(() => {
+    fetchDiscount();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sym]);
 
@@ -147,9 +177,85 @@ export default function FTVDisplay({ result }: Props) {
   const fallbackFve =
     Array.isArray(d.fv) && d.fv.length ? d.fv[d.fv.length - 1] : undefined;
 
+  const parseDateSafe = (val?: string | null) => {
+    if (!val) return null;
+    const t = Date.parse(val);
+    return Number.isNaN(t) ? null : new Date(t);
+  };
+
+  const pdfAsOf = parseDateSafe(latest?.ftvAsOf ?? latest?.confirmedAt ?? latest?.uploadedAt ?? null);
+  const discountAsOf = parseDateSafe(discountLatest?.asOf ?? discountLatest?.createdAt ?? null);
+  const discountHasFtv = discountLatest?.fairValue != null;
+
+  const preferDiscount =
+    discountHasFtv &&
+    (!latest || !latest.ftvEstimate || !pdfAsOf || (discountAsOf && pdfAsOf && discountAsOf > pdfAsOf));
+
+  // Build the active FTV meta based on source preference (discount hub vs PDF)
+  const activeMeta: FtvDocMeta | undefined = (() => {
+    if (preferDiscount && discountLatest) {
+      return {
+        symbol: sym,
+        url: "",
+        uploadedAt: discountLatest.asOf || discountLatest.createdAt || new Date().toISOString(),
+        ftvEstimate: discountLatest.fairValue ?? undefined,
+        ftvAsOf: discountLatest.asOf || discountLatest.createdAt || undefined,
+        moat: undefined,
+        styleBox: undefined,
+        uncertainty: undefined,
+        capitalAllocation: undefined,
+        esgRisk: esgOverride?.risk ?? undefined,
+        esgAsOf: esgOverride?.asOf ?? undefined,
+        esgCategory: esgOverride?.category ?? undefined,
+        parseVersion: undefined,
+        parsedAt: undefined,
+        confirmedAt: undefined,
+      };
+    }
+    return latest;
+  })();
+
+  // Fetch ESG (FMP) only when we are using Discount Hub FTV
+  useEffect(() => {
+    let cancelled = false;
+    if (!preferDiscount) {
+      setEsgOverride(null);
+      return;
+    }
+    (async () => {
+      try {
+        const res = await fetch(`/api/fmp/esg?symbol=${encodeURIComponent(sym)}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok || data?.error) {
+          throw new Error(data?.error || `HTTP ${res.status}`);
+        }
+        if (cancelled) return;
+        const risk =
+          typeof data.esgRisk === "number"
+            ? data.esgRisk
+            : data.esgRisk != null && !Number.isNaN(Number(data.esgRisk))
+            ? Number(data.esgRisk)
+            : null;
+        setEsgOverride({
+          risk,
+          category: data.esgCategory ?? null,
+          asOf: data.asOf ?? null,
+        });
+      } catch (e) {
+        if (!cancelled) {
+          setEsgOverride(null);
+          console.warn("ESG fetch failed", e);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [preferDiscount, sym]);
+
   // ---------------- New price-vs-FVE graph data ----------------
-  const parsedFve = latest?.ftvEstimate ?? undefined;
-  const parsedAsOf = latest?.ftvAsOf ?? undefined;
+  const parsedFve = activeMeta?.ftvEstimate ?? undefined;
+  const parsedAsOf = activeMeta?.ftvAsOf ?? activeMeta?.uploadedAt ?? undefined;
 
   const allDates = result.series?.dates ?? [];
   const allPrices = result.series?.price ?? [];
@@ -257,11 +363,12 @@ export default function FTVDisplay({ result }: Props) {
       : undefined;
 
   // Decide fallback rendering AFTER hooks are declared to keep hook order stable
-  const hasPdf = !!latest?.url;
-  const showFallback = docsLoaded && !hasPdf;
-  const fallbackSuffix = latest?.confirmedAt
-    ? ` (confirmed ${new Date(latest.confirmedAt).toLocaleString()})`
-    : " (unconfirmed)";
+  const showFallback = docsLoaded && !activeMeta && fallbackFve === undefined && !preferDiscount;
+  const fallbackSuffix = activeMeta?.confirmedAt
+    ? ` (confirmed ${new Date(activeMeta.confirmedAt).toLocaleString()})`
+    : activeMeta
+    ? " (unconfirmed)"
+    : "";
 
   return (
     <>
@@ -277,23 +384,35 @@ export default function FTVDisplay({ result }: Props) {
             <div className="font-medium">FTV Summary</div>
 
             <div className="flex items-center gap-3">
-              {latest && (
+              {activeMeta && (
                 <div className="text-xs text-neutral-300 hidden sm:block">
                   <span className="mr-3">
-                    Last upload:{" "}
+                    {preferDiscount ? "Discount Hub as of" : "Last upload:"}{" "}
                     <span className="text-neutral-100">
-                      {latest.uploadedAt ? new Date(latest.uploadedAt).toLocaleString() : "—"}
+                      {activeMeta.uploadedAt ? new Date(activeMeta.uploadedAt).toLocaleString() : "—"}
                     </span>
                   </span>
-                  {latest.confirmedAt && (
+                  {activeMeta.confirmedAt && (
                     <span>
                       Confirmed:{" "}
                       <span className="text-neutral-100">
-                        {new Date(latest.confirmedAt).toLocaleString()}
+                        {new Date(activeMeta.confirmedAt).toLocaleString()}
                       </span>
                     </span>
                   )}
-                  {!latest?.confirmedAt && <span className="ml-2 text-neutral-400">(unconfirmed)</span>}
+                  {!preferDiscount && !activeMeta?.confirmedAt && (
+                    <span className="ml-2 text-neutral-400">(unconfirmed)</span>
+                  )}
+                  {preferDiscount && (
+                    <span className="ml-2 text-[var(--good-200)]">
+                      Using Discount Hub FTV
+                    </span>
+                  )}
+                  {discountErr && (
+                    <span className="ml-2 text-[var(--bad-300)]">
+                      ({discountErr})
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -486,10 +605,10 @@ export default function FTVDisplay({ result }: Props) {
           </div>
 
           {/* FTV tiles */}
-          {latest ? (
+          {activeMeta ? (
             <FTVTiles
               result={result}
-              latest={latest}
+              latest={activeMeta}
               fallbackFve={fallbackFve}
               hoverInfo={{
                 price: hoverPrice,

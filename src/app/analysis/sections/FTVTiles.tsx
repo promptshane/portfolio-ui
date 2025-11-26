@@ -19,17 +19,17 @@ export type FTVTilesProps = {
 
 /* ---------- format helpers ---------- */
 function formatCurrency(n: number | undefined | null) {
-  if (n === undefined || n === null || Number.isNaN(n)) return "—";
+  if (n === undefined || n === null || Number.isNaN(n)) return "-";
   return n >= 1000
     ? `$${Math.round(n).toLocaleString()}`
     : `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 function formatPct(n: number | undefined | null) {
-  if (n === undefined || n === null || Number.isNaN(n)) return "—";
+  if (n === undefined || n === null || Number.isNaN(n)) return "-";
   return `${(n * 100).toFixed(0)}%`;
 }
 function formatRatio(n: number | undefined | null) {
-  if (n === undefined || n === null || Number.isNaN(n) || !isFinite(n)) return "—";
+  if (n === undefined || n === null || Number.isNaN(n) || !isFinite(n)) return "-";
   return `${n.toFixed(2)}×`;
 }
 
@@ -275,10 +275,10 @@ export default function FTVTiles({ result, latest, fallbackFve, hoverInfo }: FTV
 
   const ratioTone: "good" | "bad" | "mid" | undefined = toneFromRatio(ratio);
 
-  const moat = latest.moat ?? "—";
+  const moat = latest.moat ?? "-";
   // Style Box remains parsed on `latest.styleBox` but is intentionally not rendered for now.
-  const uncertainty = latest.uncertainty ?? "—";
-  const capAlloc = latest.capitalAllocation ?? "—";
+  const uncertainty = latest.uncertainty ?? "-";
+  const capAlloc = latest.capitalAllocation ?? "-";
   const esgRisk = latest.esgRisk;
   const esgAsOf = latest.esgAsOf;
   const esgCategory = latest.esgCategory;
@@ -333,7 +333,7 @@ export default function FTVTiles({ result, latest, fallbackFve, hoverInfo }: FTV
   const esgValue: React.ReactNode =
     esgRisk !== undefined
       ? (esgCategory ? `${esgRisk} ${esgCategory}` : esgRisk)
-      : "—";
+      : "-";
 
   return (
     <>

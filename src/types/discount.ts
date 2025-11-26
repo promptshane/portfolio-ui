@@ -16,4 +16,11 @@ export type DiscountPositionDto = {
   articleTitle: string | null;
   articleDate: string | null;
   createdAt: string;
+  // Live data overlays (filled server-side when available)
+  livePrice?: number | null;
+  liveReturnPct?: number | null;
+  // Price chosen for discount math (livePrice preferred, else stored currentPrice)
+  priceUsed?: number | null;
+  priceSource?: "live" | "article";
+  discountPct?: number | null;
 };
