@@ -99,20 +99,70 @@ export async function readPdfBuffer(id: string): Promise<Buffer> {
     throw new Error(`NewsArticle not found for id=${id}`);
   }
 
+  const tryReadLocal = async (): Promise<Buffer | null> => {
+    const candidates = buildLocalCandidates(article.pdfPath);
+    for (const candidate of candidates) {
+      try {
+        return await fs.promises.readFile(candidate);
+      } catch {
+        // try next candidate
+      }
+    }
+    return null;
+  };
+
+  const ensureS3Copy = async (buffer: Buffer) => {
+    if (!s3Enabled) return;
+
+    // Normalise key so legacy "data/news-pdfs/..." paths upload to the
+    // canonical "news-pdfs/<id>.ext" location.
+    const ext =
+      path.extname(article.pdfPath || "") ||
+      determineStoredExtension(article.originalFilename || `${article.id}.pdf`);
+    const key = `news-pdfs/${article.id}${ext}`;
+
+    try {
+      await putObjectBuffer({
+        key,
+        body: buffer,
+        contentType: ext === ".txt" ? "text/plain" : "application/pdf",
+        tags: { section: "news", kind: "article-pdf" },
+        metadata: { section: "news", kind: "article-pdf", articleId: article.id },
+      });
+
+      if (article.pdfPath !== key) {
+        await prisma.newsArticle.update({
+          where: { id: article.id },
+          data: { pdfPath: key },
+        });
+      }
+    } catch (err) {
+      console.warn(
+        `[news] Failed to sync PDF ${article.id} to S3 (continuing with local copy):`,
+        err
+      );
+    }
+  };
+
   if (s3Enabled) {
-    const buf = await getObjectBuffer(article.pdfPath);
-    if (!buf) throw new Error("PDF not found in S3");
-    return buf;
+    try {
+      const buf = await getObjectBuffer(article.pdfPath);
+      if (buf) return buf;
+    } catch {
+      // If S3 fetch fails, fall back to local below.
+    }
+
+    const local = await tryReadLocal();
+    if (local) {
+      await ensureS3Copy(local);
+      return local;
+    }
+
+    throw new Error("PDF not found in S3 or local storage");
   }
 
-  const candidates = buildLocalCandidates(article.pdfPath);
-  for (const candidate of candidates) {
-    try {
-      return await fs.promises.readFile(candidate);
-    } catch {
-      // try next candidate
-    }
-  }
+  const local = await tryReadLocal();
+  if (local) return local;
 
   throw new Error(`PDF not found on local disk for id=${id}`);
 }

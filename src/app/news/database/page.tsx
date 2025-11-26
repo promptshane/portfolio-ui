@@ -365,10 +365,14 @@ export default function NewsDatabasePage() {
     try {
       setError(null);
       setSummarizingId(id);
-      const res = await fetch(`/api/news/articles/${encodeURIComponent(id)}`, {
+      const res = await fetch("/api/news/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "summarize" }),
+        credentials: "include",
+        body: JSON.stringify({
+          type: "summarize",
+          articleIds: [id],
+        }),
       });
       if (!res.ok) {
         let message = `Summarize failed: ${res.status}`;
@@ -376,11 +380,11 @@ export default function NewsDatabasePage() {
           const data = await res.json();
           if (data?.error) message = data.error;
         } catch {
-          // ignore JSON parse errors
+          /* ignore */
         }
         throw new Error(message);
       }
-      await loadArticles();
+      await refreshJobs();
     } catch (err: any) {
       setError(err?.message || "Failed to summarize PDF.");
     } finally {
@@ -427,10 +431,14 @@ export default function NewsDatabasePage() {
     try {
       setError(null);
       setResummarizingId(id);
-      const res = await fetch(`/api/news/articles/${encodeURIComponent(id)}`, {
+      const res = await fetch("/api/news/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "summarize" }),
+        credentials: "include",
+        body: JSON.stringify({
+          type: "resummarize",
+          articleIds: [id],
+        }),
       });
       if (!res.ok) {
         let message = `Resummarize failed: ${res.status}`;
@@ -438,11 +446,11 @@ export default function NewsDatabasePage() {
           const data = await res.json();
           if (data?.error) message = data.error;
         } catch {
-          // ignore JSON parse errors
+          /* ignore */
         }
         throw new Error(message);
       }
-      await loadArticles();
+      await refreshJobs();
     } catch (err: any) {
       setError(err?.message || "Failed to resummarize PDF.");
     } finally {

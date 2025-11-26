@@ -9,6 +9,11 @@ import { generateAndStoreSummary } from "./summarizer";
 import { ingestEmailsFromGmail } from "./emailIngest";
 import { getVerifiedEmailsForUser } from "../user/preferences";
 
+const SUMMARY_CONCURRENCY = Math.max(
+  Number(process.env.NEWS_SUMMARY_CONCURRENCY) || 3,
+  1
+);
+
 type JobSnapshot = Pick<
   NewsBatchJob,
   | "id"
@@ -95,22 +100,30 @@ async function processSummarizeJob(job: NewsBatchJob) {
   let completed = 0;
   let lastError: string | null = null;
 
-  for (const articleId of articleIds) {
-    try {
-      await generateAndStoreSummary(articleId);
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : "Failed to summarize an article.";
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < articleIds.length) {
+      const index = cursor++;
+      const articleId = articleIds[index];
+      try {
+        await generateAndStoreSummary(articleId);
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : "Failed to summarize an article.";
+      }
+      completed += 1;
+      await prisma.newsBatchJob.update({
+        where: { id: job.id },
+        data: {
+          completed,
+          summary: `Summarizing articles (${completed}/${total})`,
+          lastError,
+        },
+      });
     }
-    completed += 1;
-    await prisma.newsBatchJob.update({
-      where: { id: job.id },
-      data: {
-        completed,
-        summary: `Summarizing articles (${completed}/${total})`,
-        lastError,
-      },
-    });
-  }
+  };
+
+  const workerCount = Math.min(SUMMARY_CONCURRENCY, articleIds.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
   if (lastError) {
     await markCompleted(job.id, `Summarizing articles (${completed}/${total})`, true, lastError);
@@ -152,22 +165,30 @@ async function processRefreshJob(job: NewsBatchJob) {
     let completed = 0;
     let lastError: string | null = null;
 
-    for (const articleId of articleIds) {
-      try {
-        await generateAndStoreSummary(articleId);
-      } catch (err) {
-        lastError = err instanceof Error ? err.message : "Failed to summarize an article.";
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < articleIds.length) {
+        const index = cursor++;
+        const articleId = articleIds[index];
+        try {
+          await generateAndStoreSummary(articleId);
+        } catch (err) {
+          lastError = err instanceof Error ? err.message : "Failed to summarize an article.";
+        }
+        completed += 1;
+        await prisma.newsBatchJob.update({
+          where: { id: job.id },
+          data: {
+            completed,
+            summary: `Summarizing articles (${completed}/${total})`,
+            lastError,
+          },
+        });
       }
-      completed += 1;
-      await prisma.newsBatchJob.update({
-        where: { id: job.id },
-        data: {
-          completed,
-          summary: `Summarizing articles (${completed}/${total})`,
-          lastError,
-        },
-      });
-    }
+    };
+
+    const workerCount = Math.min(SUMMARY_CONCURRENCY, articleIds.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
     if (lastError) {
       await markCompleted(job.id, `Summarizing articles (${completed}/${total})`, true, lastError);
