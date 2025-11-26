@@ -212,15 +212,31 @@ resumePendingJobsOnce().catch((err) => {
   console.error("Failed to resume pending news jobs", err);
 });
 
-async function ensureNoActiveJob(userId: number) {
+async function cancelActiveJob(userId: number) {
+  await prisma.newsBatchJob.updateMany({
+    where: { userId, status: { in: ACTIVE_STATUSES } },
+    data: {
+      status: "failed",
+      summary: "Cancelled by new request",
+      lastError: "Replaced by new job request",
+    },
+  });
+}
+
+async function ensureNoActiveJob(userId: number, replaceExisting = false) {
   const existing = await prisma.newsBatchJob.findFirst({
     where: {
       userId,
       status: { in: ACTIVE_STATUSES },
     },
+    orderBy: { createdAt: "desc" },
   });
   if (existing) {
-    throw new Error("A news job is already running. Please wait until it finishes.");
+    if (replaceExisting) {
+      await cancelActiveJob(userId);
+    } else {
+      throw new Error("A news job is already running. Please wait until it finishes.");
+    }
   }
 }
 
@@ -229,8 +245,9 @@ export async function enqueueSummarizeJob(options: {
   articleIds: string[];
   type: Extract<NewsBatchType, "summarize" | "resummarize">;
   label?: string;
+  replaceExisting?: boolean;
 }) {
-  await ensureNoActiveJob(options.userId);
+  await ensureNoActiveJob(options.userId, options.replaceExisting ?? false);
   const articleIds = Array.from(new Set(options.articleIds)).filter(Boolean);
   if (!articleIds.length) {
     throw new Error("No articles selected for summarization.");
@@ -258,8 +275,9 @@ export async function enqueueRefreshJob(options: {
   userId: number;
   lookbackDays?: number;
   maxEmails?: number;
+  replaceExisting?: boolean;
 }) {
-  await ensureNoActiveJob(options.userId);
+  await ensureNoActiveJob(options.userId, options.replaceExisting ?? false);
   const senders = await getVerifiedEmailsForUser(options.userId);
   if (!senders.length) {
     throw new Error("Add at least one verified sender email in Settings before refreshing.");

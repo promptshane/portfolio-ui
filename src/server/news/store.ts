@@ -4,7 +4,7 @@ import path from "path";
 import crypto from "crypto";
 import type { NewsArticle } from "@prisma/client";
 import prisma from "@/lib/prisma";
-import { getObjectBuffer, putObjectBuffer, s3Enabled } from "../s3Client";
+import { deleteObject, getObjectBuffer, putObjectBuffer, s3Enabled } from "../s3Client";
 
 const SUPPORTED_EXTENSIONS = new Set([".pdf", ".txt"]);
 
@@ -123,6 +123,9 @@ export async function deletePdf(id: string): Promise<void> {
   });
 
   if (article) {
+    if (s3Enabled && article.pdfPath) {
+      await deleteObject(article.pdfPath);
+    }
     // Best-effort local cleanup; S3 cleanup can be handled separately via lifecycle or manual delete.
     const candidates = buildLocalCandidates(article.pdfPath);
     for (const candidate of candidates) {

@@ -39,12 +39,18 @@ export async function POST(req: NextRequest) {
   }
 
   const type = typeof body?.type === "string" ? body.type : "";
+  const replaceExisting = body?.replaceExisting !== false;
 
   try {
     if (type === "refresh") {
       const lookbackDays = Number(body?.lookbackDays) || 7;
       const maxEmails = Number(body?.maxEmails) || 100;
-      const job = await enqueueRefreshJob({ userId: uid, lookbackDays, maxEmails });
+      const job = await enqueueRefreshJob({
+        userId: uid,
+        lookbackDays,
+        maxEmails,
+        replaceExisting,
+      });
       return NextResponse.json({ job });
     }
 
@@ -56,6 +62,7 @@ export async function POST(req: NextRequest) {
         articleIds,
         type,
         label: body?.label,
+        replaceExisting,
       });
       return NextResponse.json({ job });
     }

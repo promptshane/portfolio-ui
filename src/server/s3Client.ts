@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 const bucket = process.env.S3_BUCKET;
 const region = process.env.S3_REGION || "us-east-1";
@@ -74,4 +74,19 @@ export async function putObjectBuffer(params: PutParams) {
       ...(Metadata ? { Metadata } : {}),
     })
   );
+}
+
+export async function deleteObject(key: string) {
+  if (!s3Enabled) return;
+  const client = getS3Client();
+  try {
+    await client.send(
+      new DeleteObjectCommand({
+        Bucket: bucket,
+        Key: key,
+      })
+    );
+  } catch {
+    // best-effort
+  }
 }

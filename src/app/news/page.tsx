@@ -305,7 +305,7 @@ export default function NewsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ type: "refresh", lookbackDays: 7, maxEmails: 100 }),
+        body: JSON.stringify({ type: "refresh", lookbackDays: 7, maxEmails: 100, replaceExisting: true }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
