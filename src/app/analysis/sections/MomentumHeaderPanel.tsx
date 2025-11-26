@@ -52,6 +52,8 @@ type Props = {
 
   // dot score
   momentumDotScore: number;
+  colorizePrice: boolean;
+  onToggleColorize: () => void;
 };
 
 export default function MomentumHeaderPanel({
@@ -74,6 +76,8 @@ export default function MomentumHeaderPanel({
   rangeStartMeta,
   hoveredOHLC,
   momentumDotScore,
+  colorizePrice,
+  onToggleColorize,
 }: Props) {
   return (
     <div className="bg-neutral-800 rounded-2xl p-5 border border-neutral-700">
@@ -310,11 +314,14 @@ export default function MomentumHeaderPanel({
             );
           })()}
 
-          <div
+          <button
+            type="button"
+            onClick={onToggleColorize}
+            aria-pressed={colorizePrice}
             className={`w-6 h-6 rounded-full border border-neutral-700 shadow-[0_0_0_3px_rgba(0,0,0,0.35)] ${dotClass(
               momentumDotScore
-            )}`}
-            title="Overall momentum (hover-aware, ML-weighted when available)"
+            )} ${colorizePrice ? "ring-2 ring-white" : ""}`}
+            title="Toggle momentum-aware price coloring"
           />
         </div>
       </div>

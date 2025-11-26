@@ -589,6 +589,11 @@ export default function useMomentumData({
     return Math.round((raw + 100) / 2);
   }, [indicatorSignals.composite, visibleIndexRange, hoverI]);
 
+  const visibleCompositeSlice = useMemo(() => {
+    const { start, end } = visibleIndexRange;
+    return indicatorSignals.composite.slice(start, end + 1);
+  }, [indicatorSignals.composite, visibleIndexRange]);
+
   /* ------------------------------ Key Stats ------------------------------ */
   const keyStats: KeyStats | undefined = useMemo(() => {
     const r: any = result as any;
@@ -647,6 +652,7 @@ export default function useMomentumData({
     hoveredOHLC,
     momentumDotScore,
     indicatorSignals,
+    visibleCompositeSlice,
 
     keyStats,
   };

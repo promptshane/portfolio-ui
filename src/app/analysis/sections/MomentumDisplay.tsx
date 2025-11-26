@@ -53,6 +53,7 @@ export default function MomentumDisplay({
   const [useCandles, setUseCandles] = useState(false);
   const [hKey, setHKey] = useState<HorizonKey>("medium");
   const [oneMonthInterval, setOneMonthInterval] = useState<"1h" | "1d">("1h");
+  const [colorizePrice, setColorizePrice] = useState(false);
 
   const data = useMomentumData({ result, range, hKey, hoverI, oneMonthInterval });
 
@@ -98,6 +99,8 @@ export default function MomentumDisplay({
         rangeStartMeta={data.rangeStartMeta}
         hoveredOHLC={data.hoveredOHLC}
         momentumDotScore={data.momentumDotScore}
+        colorizePrice={colorizePrice}
+        onToggleColorize={() => setColorizePrice((v) => !v)}
       />
 
       {/* === Momentum price graph + range selector === */}
@@ -131,6 +134,8 @@ export default function MomentumDisplay({
         keyStats={data.keyStats}
         oneMonthInterval={oneMonthInterval}
         setOneMonthInterval={setOneMonthInterval}
+        colorizePrice={colorizePrice}
+        compositeSlice={data.visibleCompositeSlice}
       />
     </>
   );

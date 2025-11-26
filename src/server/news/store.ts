@@ -153,6 +153,7 @@ export type SummaryPayload = {
   actions?: string[] | null;
   // keep generic so we can store richer ticker objects if needed
   tickers?: unknown[] | null;
+  positions?: unknown[] | null;
 };
 
 export async function saveSummary(
@@ -179,6 +180,7 @@ export async function saveSummary(
         : null,
       actionsJson: payload.actions ? JSON.stringify(payload.actions) : null,
       tickersJson: payload.tickers ? JSON.stringify(payload.tickers) : null,
+      discountJson: payload.positions ? JSON.stringify(payload.positions) : null,
       summarizedAt: new Date(),
     },
   });

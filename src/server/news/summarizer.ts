@@ -24,6 +24,21 @@ export type SummaryTicker = {
   has_explicit_action: boolean;
 };
 
+export type SummaryPosition = {
+  symbol: string;
+  name: string;
+  recommendation: string;
+  allocation: number | null;
+  entry_date: string;
+  entry_price: number | null;
+  current_price: number | null;
+  return_pct: number | null;
+  fair_value: number | null;
+  stop_price: number | null;
+  notes: string;
+  as_of: string;
+};
+
 export type SummaryPayload = {
   title: string;
   date_published: string;
@@ -32,6 +47,7 @@ export type SummaryPayload = {
   key_points: string[];
   actions: SummaryAction[];
   tickers: SummaryTicker[];
+  positions: SummaryPosition[];
 };
 
 export type QaAnswer = {
@@ -94,6 +110,22 @@ Read the entire document and produce a concise summary in the following JSON for
       "importance_rank": 1,
       "has_explicit_action": true
     }
+  ],
+  "positions": [
+    {
+      "symbol": "",
+      "name": "",
+      "recommendation": "",
+      "allocation": null,
+      "entry_date": "",
+      "entry_price": null,
+      "current_price": null,
+      "return_pct": null,
+      "fair_value": null,
+      "stop_price": null,
+      "notes": "",
+      "as_of": ""
+    }
   ]
 }
 
@@ -117,6 +149,20 @@ Rules:
     - "name": The company or ETF name if clearly available; otherwise an empty string "".
     - "importance_rank": An integer where 1 is the most important ticker in this document.
     - "has_explicit_action": true if this ticker also appears in the "actions" list with a non-empty ticker; otherwise false.
+- "positions": If the document includes a position table (buy/hold/sell grid), extract each row with the following fields:
+    - "symbol": ticker symbol (e.g., "EWG").
+    - "name": company/ETF name.
+    - "recommendation": Buy / Hold / Sell / Buy more / Stop triggered / similar.
+    - "allocation": numeric percent allocation/weighting for the position (if shown).
+    - "entry_date": the recommendation/reference date (issue date) as written.
+    - "entry_price": price at that entry/reference date.
+    - "current_price": current/latest price shown in the document.
+    - "return_pct": percent gain/loss since entry (if shown).
+    - "fair_value": Fair Trade Value / buy-up-to price (if present).
+    - "stop_price": stop/exit price (if present).
+    - "notes": short freeform notes (theme, adjustments, etc.) if present.
+    - "as_of": the date the table represents (if stated separately).
+  - If no such table exists, return "positions": [].
 - If any field cannot be found in the document, fill it with an empty string "", an empty list [], or null as appropriate.
 - Do not include any additional keys beyond those listed above.
 
@@ -228,6 +274,53 @@ function normaliseSummary(raw: any): SummaryPayload {
       }))
     : [];
 
+  const positions: SummaryPosition[] = Array.isArray(raw?.positions)
+    ? raw.positions.map((p: any) => ({
+        symbol: typeof p?.symbol === "string" ? p.symbol : "",
+        name: typeof p?.name === "string" ? p.name : "",
+        recommendation: typeof p?.recommendation === "string" ? p.recommendation : "",
+        allocation:
+          typeof p?.allocation === "number"
+            ? p.allocation
+            : typeof p?.allocation === "string"
+            ? Number(p.allocation.replace(/[^0-9.+-]/g, ""))
+            : null,
+        entry_date: typeof p?.entry_date === "string" ? p.entry_date : "",
+        entry_price:
+          typeof p?.entry_price === "number"
+            ? p.entry_price
+            : typeof p?.entry_price === "string"
+            ? Number(p.entry_price.replace(/[^0-9.+-]/g, ""))
+            : null,
+        current_price:
+          typeof p?.current_price === "number"
+            ? p.current_price
+            : typeof p?.current_price === "string"
+            ? Number(p.current_price.replace(/[^0-9.+-]/g, ""))
+            : null,
+        return_pct:
+          typeof p?.return_pct === "number"
+            ? p.return_pct
+            : typeof p?.return_pct === "string"
+            ? Number(p.return_pct.replace(/[^0-9.+-]/g, ""))
+            : null,
+        fair_value:
+          typeof p?.fair_value === "number"
+            ? p.fair_value
+            : typeof p?.fair_value === "string"
+            ? Number(p.fair_value.replace(/[^0-9.+-]/g, ""))
+            : null,
+        stop_price:
+          typeof p?.stop_price === "number"
+            ? p.stop_price
+            : typeof p?.stop_price === "string"
+            ? Number(p.stop_price.replace(/[^0-9.+-]/g, ""))
+            : null,
+        notes: typeof p?.notes === "string" ? p.notes : "",
+        as_of: typeof p?.as_of === "string" ? p.as_of : "",
+      }))
+    : [];
+
   // Build a combined text blob from the visible fields so we only keep
   // tickers that actually appear in summary, key points, or actions.
   const combinedTextParts: string[] = [];
@@ -266,6 +359,7 @@ function normaliseSummary(raw: any): SummaryPayload {
     key_points: keyPoints,
     actions,
     tickers: filteredTickers,
+    positions,
   };
 }
 
@@ -379,9 +473,49 @@ export async function generateAndStoreSummary(
       keyPointsJson: JSON.stringify(summary.key_points),
       actionsJson: JSON.stringify(summary.actions),
       tickersJson: JSON.stringify(summary.tickers),
+      discountJson: summary.positions?.length ? JSON.stringify(summary.positions) : null,
       summarizedAt: new Date(),
     },
   });
+
+  // Persist structured positions for Discount Hub
+  const asOfFallback = datePublished ?? new Date();
+  const toNumber = (value: number | null | undefined): number | null =>
+    Number.isFinite(value ?? NaN) ? Number(value) : null;
+  const parseDate = (value: string): Date | null => {
+    if (!value) return null;
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
+  await prisma.discountPosition.deleteMany({ where: { articleId } });
+  if (Array.isArray(summary.positions) && summary.positions.length) {
+    const rows = summary.positions
+      .map((p) => {
+        const symbol = (p.symbol || "").trim().toUpperCase();
+        if (!symbol) return null;
+        return {
+          articleId,
+          symbol,
+          name: p.name?.trim() || null,
+          recommendation: p.recommendation?.trim() || null,
+          allocation: toNumber(p.allocation),
+          entryDate: parseDate(p.entry_date),
+          entryPrice: toNumber(p.entry_price),
+          currentPrice: toNumber(p.current_price),
+          returnPct: toNumber(p.return_pct),
+          fairValue: toNumber(p.fair_value),
+          stopPrice: toNumber(p.stop_price),
+          notes: p.notes?.trim() || null,
+          asOfDate: parseDate(p.as_of) ?? asOfFallback ?? null,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => !!r);
+
+    if (rows.length) {
+      await prisma.discountPosition.createMany({ data: rows });
+    }
+  }
 
   return summary;
 }

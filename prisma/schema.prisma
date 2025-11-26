@@ -93,12 +93,14 @@ model NewsArticle {
   tickersJson      String?
   summarizedAt     DateTime?
   qaHistoryJson    String?
+  discountJson     String?
 
   questions        NewsQuestion[]
   views            NewsArticleView[]   // <-- back-relation for NewsArticleView.article
 
   // Notes reposts for this article
   notesReposts     NotesRepost[]
+  discountPositions DiscountPosition[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -119,6 +121,28 @@ model NewsQuestion {
 
   @@index([articleId, userId, createdAt(sort: Desc)])
   @@map("NewsQuestion")
+}
+
+model DiscountPosition {
+  id             Int         @id @default(autoincrement())
+  article        NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleId      String
+  symbol         String
+  name           String?
+  recommendation String?
+  allocation     Float?
+  entryDate      DateTime?
+  entryPrice     Float?
+  currentPrice   Float?
+  returnPct      Float?
+  fairValue      Float?
+  stopPrice      Float?
+  notes          String?
+  asOfDate       DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([symbol, createdAt(sort: Desc)])
 }
 
 model NewsArticleView {

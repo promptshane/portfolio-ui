@@ -31,7 +31,8 @@ type RepostDraft = {
   mode: "create" | "edit";
 };
 
-const PROCESSING_PATTERN = [3, 2, 1, 2] as const;
+const PROCESSING_PATTERN = [3, 2, 1, 0] as const;
+const LOADING_STATES = ["Loading...", "Loading..", "Loading.", "Loading"] as const;
 
 export default function NewsPage() {
   const router = useRouter();
@@ -63,6 +64,7 @@ export default function NewsPage() {
   const { activeJob, jobRunning, refreshJobs, setPolling } = useNewsJobs({ pollIntervalMs: 4000 });
   const [refreshBusy, setRefreshBusy] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [subtitleOverride, setSubtitleOverride] = useState<string | null>(null);
 
   const actionButtonClass =
     "inline-flex items-center rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-sm font-medium text-neutral-100 hover:border-[var(--highlight-400)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--highlight-400)]";
@@ -77,21 +79,19 @@ export default function NewsPage() {
     </button>
   );
 
-  const [refreshStatusHint, setRefreshStatusHint] = useState<string | null>(null);
   const [processingStep, setProcessingStep] = useState(0);
-  const showProcessing =
-    jobRunning && activeJob?.type === "refresh" && (activeJob?.total ?? 0) > 0;
+  const loadingActive = refreshBusy || jobRunning;
 
   useEffect(() => {
-    if (!showProcessing) {
+    if (!loadingActive) {
       setProcessingStep(0);
       return;
     }
     const interval = window.setInterval(() => {
       setProcessingStep((prev) => (prev + 1) % PROCESSING_PATTERN.length);
-    }, 500);
+    }, 450);
     return () => window.clearInterval(interval);
-  }, [showProcessing]);
+  }, [loadingActive]);
 
   const loadArticles = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -794,74 +794,76 @@ export default function NewsPage() {
     "1Y": "This Year",
   };
   const timeframeLabel = timeframeLabels[timeframe];
+  const subtitleDefault = `(${timeframeReadCount}/${timeframeTotal} Articles read for ${timeframeLabel})`;
 
-  const refreshJobSummary = useMemo(() => {
-    if (!activeJob || activeJob.type !== "refresh") return null;
-    if (activeJob.status === "failed") {
-      return activeJob.lastError || "Refresh failed.";
-    }
-    return activeJob.summary;
-  }, [activeJob]);
+  const refreshButtonLabel = loadingActive
+    ? LOADING_STATES[processingStep % LOADING_STATES.length]
+    : "Refresh";
 
-  const refreshButtonLabel =
-    activeJob?.type === "refresh" && jobRunning
-      ? refreshJobSummary || `${activeJob.completed}/${Math.max(activeJob.total, 0)} Articles Processed`
-      : refreshBusy
-      ? "Starting…"
-      : "Refresh";
-
-  const refreshStatusText =
-    activeJob?.type === "refresh" && jobRunning
-      ? null
-      : refreshJobSummary || refreshError;
-
-  const processingDots = ".".repeat(PROCESSING_PATTERN[processingStep]);
-
+  // Drive the subtitle with live job status, then revert to default after a short delay
   useEffect(() => {
-    if (showProcessing) {
-      setRefreshStatusHint(`Processing${processingDots}`);
+    if (refreshBusy && !activeJob) {
+      setSubtitleOverride("Finding new articles…");
       return;
     }
-    if (!refreshStatusText) {
-      setRefreshStatusHint(null);
-      return;
+    if (activeJob?.type === "refresh") {
+      if (activeJob.status === "failed") {
+        setSubtitleOverride(activeJob.lastError || "Refresh failed.");
+        const t = window.setTimeout(() => setSubtitleOverride(null), 5000);
+        return () => window.clearTimeout(t);
+      }
+      if (activeJob.status === "running") {
+        const total = Math.max(activeJob.total ?? 0, 0);
+        if (!total) {
+          setSubtitleOverride(activeJob.summary || "Finding new articles…");
+          return;
+        }
+        if (activeJob.completed >= total) {
+          setSubtitleOverride(`All Articles Summarized`);
+          return;
+        }
+        if (activeJob.completed === 0) {
+          setSubtitleOverride(`${total} Articles found`);
+          return;
+        }
+        setSubtitleOverride(`Summarizing articles (${activeJob.completed}/${total})`);
+        return;
+      }
+      if (activeJob.status === "completed") {
+        setSubtitleOverride(activeJob.summary || "All Articles Summarized");
+        const t = window.setTimeout(() => setSubtitleOverride(null), 5000);
+        return () => window.clearTimeout(t);
+      }
     }
-    setRefreshStatusHint(refreshStatusText);
-    if (jobRunning) return;
-    const handle = window.setTimeout(() => {
-      setRefreshStatusHint(null);
-    }, 5000);
-    return () => window.clearTimeout(handle);
-  }, [showProcessing, processingDots, refreshStatusText, jobRunning]);
+    if (refreshError) {
+      setSubtitleOverride(refreshError);
+      const t = window.setTimeout(() => setSubtitleOverride(null), 5000);
+      return () => window.clearTimeout(t);
+    }
+    setSubtitleOverride(null);
+  }, [activeJob, refreshBusy, refreshError, loadingActive]);
 
   return (
     <main className="min-h-screen bg-neutral-900 text-white px-6 py-8">
       <Header
         title="News"
-        subtitle={`(${timeframeReadCount}/${timeframeTotal} Articles read for ${timeframeLabel})`}
+        subtitle={subtitleOverride ?? subtitleDefault}
         leftSlot={databaseButton}
         rightSlot={
           <div className="flex items-start gap-2">
             {/* Refresh button + status */}
-            <div className="relative flex flex-col items-start pb-4">
-              <button
-                type="button"
-                onClick={handleRefreshNews}
-                disabled={refreshBusy || jobRunning}
-                className={`${actionButtonClass} ${
-                  jobRunning && activeJob?.type === "refresh"
-                    ? "border-[var(--highlight-400)] text-[var(--highlight-100)]"
-                    : ""
-                }`}
-              >
-                {refreshButtonLabel}
-              </button>
-              {refreshStatusHint && (
-                <span className="absolute left-0 top-full mt-1 text-[10px] text-neutral-400 whitespace-nowrap">
-                  {refreshStatusHint}
-                </span>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={handleRefreshNews}
+              disabled={refreshBusy || jobRunning}
+              className={`${actionButtonClass} ${
+                jobRunning && activeJob?.type === "refresh"
+                  ? "border-[var(--highlight-400)] text-[var(--highlight-100)]"
+                  : ""
+              }`}
+            >
+              {refreshButtonLabel}
+            </button>
 
             {/* Sort dropdown */}
             <div className="relative" ref={sortDropdownRef}>

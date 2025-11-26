@@ -69,6 +69,8 @@ type Props = {
   keyStats?: KeyStats;
   oneMonthInterval: "1h" | "1d";
   setOneMonthInterval: (v: "1h" | "1d") => void;
+  colorizePrice: boolean;
+  compositeSlice: number[];
 };
 
 function clampToInterval(date: Date, minutes: number) {
@@ -183,6 +185,8 @@ export default function MomentumChart({
   keyStats,
   oneMonthInterval,
   setOneMonthInterval,
+  colorizePrice,
+  compositeSlice,
 }: Props) {
   const extRange = range as ExtRangeKey;
   const [showStats, setShowStats] = useState(false);
@@ -322,22 +326,74 @@ export default function MomentumChart({
             return <g>{elements}</g>;
           })()
         ) : (
-          pricePathMemo && (
-            <>
-              <path
-                d={`${pricePathMemo} L 990 270 L 10 270 Z`}
-                fill={(rangeStartMeta?.abs ?? 0) >= 0 ? "url(#priceFillUp)" : "url(#priceFillDown)"}
-              />
-              <path
-                d={pricePathMemo}
-                fill="none"
-                stroke={(rangeStartMeta?.abs ?? 0) >= 0 ? "var(--good-300)" : "var(--bad-400)"}
-                strokeWidth={1.0}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-            </>
-          )
+          <>
+            {pricePathMemo && !colorizePrice && (
+              <>
+                <path
+                  d={`${pricePathMemo} L 990 270 L 10 270 Z`}
+                  fill={(rangeStartMeta?.abs ?? 0) >= 0 ? "url(#priceFillUp)" : "url(#priceFillDown)"}
+                />
+                <path
+                  d={pricePathMemo}
+                  fill="none"
+                  stroke={(rangeStartMeta?.abs ?? 0) >= 0 ? "var(--good-300)" : "var(--bad-400)"}
+                  strokeWidth={1.0}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+              </>
+            )}
+
+            {colorizePrice &&
+              momentumGeom &&
+              compositeSlice.length === visiblePriceSlice.length &&
+              visiblePriceSlice.length > 1 &&
+              (() => {
+                const segments: { color: string; d: string }[] = [];
+                const colorForScore = (v: number) => {
+                  const score = (v + 100) / 2;
+                  if (score >= 67) return "var(--good-400)";
+                  if (score >= 34) return "var(--mid-400)";
+                  return "var(--bad-400)";
+                };
+
+                const pts = visiblePriceSlice.map((p, i) => ({
+                  x: momentumGeom.X(i),
+                  y: momentumGeom.Y(p),
+                  color: colorForScore(compositeSlice[i] ?? 0),
+                }));
+
+                let currentColor = pts[0].color;
+                let d = `M ${pts[0].x} ${pts[0].y}`;
+                for (let i = 1; i < pts.length; i++) {
+                  const { x, y, color } = pts[i];
+                  if (color === currentColor) {
+                    d += ` L ${x} ${y}`;
+                  } else {
+                    segments.push({ color: currentColor, d });
+                    d = `M ${pts[i - 1].x} ${pts[i - 1].y} L ${x} ${y}`;
+                    currentColor = color;
+                  }
+                }
+                segments.push({ color: currentColor, d });
+
+                return (
+                  <g>
+                    {segments.map((seg, idx) => (
+                      <path
+                        key={`seg-${idx}`}
+                        d={seg.d}
+                        fill="none"
+                        stroke={seg.color}
+                        strokeWidth={1.3}
+                        strokeLinejoin="round"
+                        strokeLinecap="round"
+                      />
+                    ))}
+                  </g>
+                );
+              })()}
+          </>
         )}
 
         {/* Bollinger overlay (from ACTIVE horizon) */}

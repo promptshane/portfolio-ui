@@ -63,10 +63,9 @@ export default function HomeClient() {
         <Card title="Analysis" href="/analysis" description="Signals & diagnostics (WIP)" />
         <Card title="News" href="/news" description="Market headlines & stories" />
         <Card
-          title="The Hedge"
-          href="#"
-          locked
-          description="Build your ideal risk-balanced portfolio"
+          title="Discount Hub"
+          href="/discount-hub"
+          description="Buy/Hold/Sell guidance captured from research"
         />
         <Card title="Options" href="#" locked description="Find ideal contracts by edge & payoff" />
         <Card title="Notes" href="/notes" description="Store investment notes" />

@@ -81,7 +81,11 @@ async function processSummarizeJob(job: NewsBatchJob) {
 
   await prisma.newsBatchJob.update({
     where: { id: job.id },
-    data: { total, completed: 0, summary: total ? `0/${total} Articles Processed` : "Nothing to summarize." },
+    data: {
+      total,
+      completed: 0,
+      summary: total ? `Summarizing articles (0/${total})` : "Nothing to summarize.",
+    },
   });
 
   if (!total) {
@@ -102,16 +106,16 @@ async function processSummarizeJob(job: NewsBatchJob) {
       where: { id: job.id },
       data: {
         completed,
-        summary: `${completed}/${total} Articles Processed`,
+        summary: `Summarizing articles (${completed}/${total})`,
         lastError,
       },
     });
   }
 
   if (lastError) {
-    await markCompleted(job.id, `${completed}/${total} Articles Processed`, true, lastError);
+    await markCompleted(job.id, `Summarizing articles (${completed}/${total})`, true, lastError);
   } else {
-    await markCompleted(job.id, `Finished ${completed}/${total} Articles.`);
+    await markCompleted(job.id, `All articles summarized (${completed}/${total}).`);
   }
 }
 
@@ -137,7 +141,7 @@ async function processRefreshJob(job: NewsBatchJob) {
       data: {
         total,
         completed: 0,
-        summary: total ? `Found ${total} Articles` : "No new articles found.",
+        summary: total ? `Found ${total} articles` : "No new articles found.",
       },
     });
 
@@ -159,16 +163,16 @@ async function processRefreshJob(job: NewsBatchJob) {
         where: { id: job.id },
         data: {
           completed,
-          summary: `${completed}/${total} Articles Processed`,
+          summary: `Summarizing articles (${completed}/${total})`,
           lastError,
         },
       });
     }
 
     if (lastError) {
-      await markCompleted(job.id, `${completed}/${total} Articles Processed`, true, lastError);
+      await markCompleted(job.id, `Summarizing articles (${completed}/${total})`, true, lastError);
     } else {
-      await markCompleted(job.id, `Completed ${completed}/${total} Articles.`);
+      await markCompleted(job.id, `All articles summarized (${completed}/${total}).`);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Refresh failed.";
