@@ -32,26 +32,65 @@ export function extractFinancialScore(result: EvalResult): number | null {
 }
 
 type FtvDocsResponse = { ok: boolean; latest?: FtvDocMeta | null };
+type DiscountResponse = {
+  ok: boolean;
+  latest?: {
+    fairValue?: number | null;
+    asOf?: string | null;
+    createdAt?: string | null;
+    priceUsed?: number | null;
+    livePrice?: number | null;
+    currentPrice?: number | null;
+  } | null;
+};
+
+function parseDate(val?: string | null): number | null {
+  if (!val) return null;
+  const t = Date.parse(val);
+  return Number.isNaN(t) ? null : t;
+}
 
 export async function fetchFtvDotScore(
   sym: string,
   price: number | null | undefined
 ): Promise<number | null> {
-  if (typeof price !== "number" || !Number.isFinite(price)) return null;
   try {
-    const res = await fetch(`/api/ftv/docs?symbol=${encodeURIComponent(sym)}`, { cache: "no-store" });
-    const data: FtvDocsResponse = await res.json();
-    if (!res.ok || !data?.ok) return null;
-    const latest = data.latest;
-    if (!latest?.url) return null;
-    const estimateRaw =
-      typeof latest.ftvEstimate === "number"
-        ? latest.ftvEstimate
-        : latest?.ftvEstimate != null
-          ? Number(latest.ftvEstimate)
-          : null;
-    if (typeof estimateRaw !== "number" || !Number.isFinite(estimateRaw) || estimateRaw === 0) return null;
-    const ratio = price / estimateRaw;
+    const [ftvRes, discountRes] = await Promise.all([
+      fetch(`/api/ftv/docs?symbol=${encodeURIComponent(sym)}`, { cache: "no-store" }),
+      fetch(`/api/discounts/${encodeURIComponent(sym)}`, { cache: "no-store" }),
+    ]);
+
+    const ftvData: FtvDocsResponse = await ftvRes.json().catch(() => ({ ok: false }));
+    const discountData: DiscountResponse = await discountRes.json().catch(() => ({ ok: false }));
+
+    const ftv = ftvRes.ok && ftvData?.ok ? ftvData.latest ?? null : null;
+    const disc = discountRes.ok && discountData?.ok ? discountData.latest ?? null : null;
+
+    const ftvEstimate =
+      ftv && typeof ftv.ftvEstimate === "number" && Number.isFinite(ftv.ftvEstimate)
+        ? ftv.ftvEstimate
+        : null;
+    const ftvAsOf = ftv ? parseDate(ftv.ftvAsOf ?? ftv.confirmedAt ?? ftv.uploadedAt ?? null) : null;
+
+    const discEstimate =
+      disc && typeof disc.fairValue === "number" && Number.isFinite(disc.fairValue)
+        ? disc.fairValue
+        : null;
+    const discAsOf = disc ? parseDate(disc.asOf ?? disc.createdAt ?? null) : null;
+
+    const useDiscount =
+      discEstimate !== null &&
+      (!ftvEstimate || (discAsOf !== null && ftvAsOf !== null && discAsOf > ftvAsOf));
+
+    const estimate = useDiscount ? discEstimate : ftvEstimate;
+    const priceInput =
+      (useDiscount && (disc?.priceUsed ?? disc?.livePrice ?? disc?.currentPrice)) ??
+      price;
+
+    if (typeof estimate !== "number" || !Number.isFinite(estimate) || estimate === 0) return null;
+    if (typeof priceInput !== "number" || !Number.isFinite(priceInput)) return null;
+
+    const ratio = priceInput / estimate;
     if (!Number.isFinite(ratio)) return null;
     if (ratio < 0.95) return 85;
     if (ratio > 1.05) return 20;

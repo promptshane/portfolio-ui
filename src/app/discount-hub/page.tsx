@@ -217,9 +217,14 @@ export default function DiscountHubPage() {
                   <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-neutral-200">
                     <Stat label="Entry" value={fmtMoney(item.entryPrice)} helper={fmtDate(item.entryDate)} />
                     <Stat
-                      label="Current"
+                      label="Current (live)"
                       value={fmtMoney(item.priceUsed ?? item.livePrice ?? item.currentPrice)}
                       helper={fmtPct(item.liveReturnPct ?? item.returnPct)}
+                    />
+                    <Stat
+                      label="Stored price"
+                      value={fmtMoney(item.currentPrice)}
+                      helper={item.priceUsed && item.currentPrice ? "Live price shown above" : undefined}
                     />
                     <Stat label="Fair Value" value={fmtMoney(item.fairValue)} />
                     <Stat label="Stop" value={fmtMoney(item.stopPrice)} />
