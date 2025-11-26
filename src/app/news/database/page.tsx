@@ -398,6 +398,7 @@ export default function NewsDatabasePage() {
       const res = await fetch("/api/news/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           type: "summarize",
           articleIds: toSummarize.map((a) => a.id),
@@ -459,6 +460,7 @@ export default function NewsDatabasePage() {
       const res = await fetch("/api/news/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           type: "resummarize",
           articleIds: toResummarize.map((a) => a.id),
@@ -527,7 +529,7 @@ export default function NewsDatabasePage() {
     resummarizingAll ||
     summarizingId !== null ||
     resummarizingId !== null ||
-    jobRunning;
+    (jobRunning && activeJob?.type !== "refresh");
 
   const jobStatusText = useMemo(() => {
     if (!activeJob) return null;

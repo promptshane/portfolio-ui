@@ -478,43 +478,47 @@ export async function generateAndStoreSummary(
     },
   });
 
-  // Persist structured positions for Discount Hub
-  const asOfFallback = datePublished ?? new Date();
-  const toNumber = (value: number | null | undefined): number | null =>
-    Number.isFinite(value ?? NaN) ? Number(value) : null;
-  const parseDate = (value: string): Date | null => {
-    if (!value) return null;
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d;
-  };
+  // Persist structured positions for Discount Hub (best-effort; don't fail summary if table missing)
+  try {
+    const asOfFallback = datePublished ?? new Date();
+    const toNumber = (value: number | null | undefined): number | null =>
+      Number.isFinite(value ?? NaN) ? Number(value) : null;
+    const parseDate = (value: string): Date | null => {
+      if (!value) return null;
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
 
-  await prisma.discountPosition.deleteMany({ where: { articleId } });
-  if (Array.isArray(summary.positions) && summary.positions.length) {
-    const rows = summary.positions
-      .map((p) => {
-        const symbol = (p.symbol || "").trim().toUpperCase();
-        if (!symbol) return null;
-        return {
-          articleId,
-          symbol,
-          name: p.name?.trim() || null,
-          recommendation: p.recommendation?.trim() || null,
-          allocation: toNumber(p.allocation),
-          entryDate: parseDate(p.entry_date),
-          entryPrice: toNumber(p.entry_price),
-          currentPrice: toNumber(p.current_price),
-          returnPct: toNumber(p.return_pct),
-          fairValue: toNumber(p.fair_value),
-          stopPrice: toNumber(p.stop_price),
-          notes: p.notes?.trim() || null,
-          asOfDate: parseDate(p.as_of) ?? asOfFallback ?? null,
-        };
-      })
-      .filter((r): r is NonNullable<typeof r> => !!r);
+    await prisma.discountPosition.deleteMany({ where: { articleId } });
+    if (Array.isArray(summary.positions) && summary.positions.length) {
+      const rows = summary.positions
+        .map((p) => {
+          const symbol = (p.symbol || "").trim().toUpperCase();
+          if (!symbol) return null;
+          return {
+            articleId,
+            symbol,
+            name: p.name?.trim() || null,
+            recommendation: p.recommendation?.trim() || null,
+            allocation: toNumber(p.allocation),
+            entryDate: parseDate(p.entry_date),
+            entryPrice: toNumber(p.entry_price),
+            currentPrice: toNumber(p.current_price),
+            returnPct: toNumber(p.return_pct),
+            fairValue: toNumber(p.fair_value),
+            stopPrice: toNumber(p.stop_price),
+            notes: p.notes?.trim() || null,
+            asOfDate: parseDate(p.as_of) ?? asOfFallback ?? null,
+          };
+        })
+        .filter((r): r is NonNullable<typeof r> => !!r);
 
-    if (rows.length) {
-      await prisma.discountPosition.createMany({ data: rows });
+      if (rows.length) {
+        await prisma.discountPosition.createMany({ data: rows });
+      }
     }
+  } catch (err) {
+    console.error("Discount position persistence failed (continuing):", err);
   }
 
   return summary;

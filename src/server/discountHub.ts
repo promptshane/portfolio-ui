@@ -32,37 +32,42 @@ function toDto(row: any): DiscountPositionDto {
 }
 
 export async function getDiscountHubData() {
-  const rows = await prisma.discountPosition.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 500,
-    include: {
-      article: {
-        select: {
-          id: true,
-          title: true,
-          datePublished: true,
-          summarizedAt: true,
-          uploadedAt: true,
+  try {
+    const rows = await prisma.discountPosition.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 500,
+      include: {
+        article: {
+          select: {
+            id: true,
+            title: true,
+            datePublished: true,
+            summarizedAt: true,
+            uploadedAt: true,
+          },
         },
       },
-    },
-  });
+    });
 
-  const historyMap = new Map<string, DiscountPositionDto[]>();
-  for (const row of rows) {
-    const dto = toDto(row);
-    const key = dto.symbol.toUpperCase();
-    if (!historyMap.has(key)) historyMap.set(key, []);
-    historyMap.get(key)!.push(dto);
+    const historyMap = new Map<string, DiscountPositionDto[]>();
+    for (const row of rows) {
+      const dto = toDto(row);
+      const key = dto.symbol.toUpperCase();
+      if (!historyMap.has(key)) historyMap.set(key, []);
+      historyMap.get(key)!.push(dto);
+    }
+
+    const latest = Array.from(historyMap.values())
+      .map((arr) => arr[0])
+      .sort((a, b) => new Date(b.asOf).getTime() - new Date(a.asOf).getTime());
+
+    const history = Object.fromEntries(
+      Array.from(historyMap.entries()).map(([sym, arr]) => [sym, arr])
+    );
+
+    return { latest, history };
+  } catch (err) {
+    console.error("Failed to load discount hub data", err);
+    return { latest: [] as DiscountPositionDto[], history: {} as Record<string, DiscountPositionDto[]> };
   }
-
-  const latest = Array.from(historyMap.values())
-    .map((arr) => arr[0])
-    .sort((a, b) => new Date(b.asOf).getTime() - new Date(a.asOf).getTime());
-
-  const history = Object.fromEntries(
-    Array.from(historyMap.entries()).map(([sym, arr]) => [sym, arr])
-  );
-
-  return { latest, history };
 }
