@@ -55,10 +55,13 @@ export default function DiscountHubPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [listCount, setListCount] = useState<number>(10);
+  const [sortMode, setSortMode] = useState<"buy" | "sell">("buy");
+  const [showInfo, setShowInfo] = useState(false);
   const [quotes, setQuotes] = useState<Record<string, { price: number | null; changesPercentage: number | null }>>({});
   const [quotesError, setQuotesError] = useState<string | null>(null);
   const [quotesLoading, setQuotesLoading] = useState(false);
   const [quotesLoaded, setQuotesLoaded] = useState(0);
+  const [loadingDots, setLoadingDots] = useState(".");
 
   const symbols = useMemo(() => {
     return Array.from(
@@ -147,6 +150,17 @@ export default function DiscountHubPage() {
     };
   }, []);
 
+  // Animated "Loading..." subtitle while quotes are being fetched
+  useEffect(() => {
+    if (!quotesLoading) return;
+    let dots = ".";
+    const id = setInterval(() => {
+      dots = dots.length >= 3 ? "." : `${dots}.`;
+      setLoadingDots(dots);
+    }, 450);
+    return () => clearInterval(id);
+  }, [quotesLoading]);
+
   const hydratedLatest = useMemo(() => {
     if (!latest.length) return latest;
     return latest.map((item) => {
@@ -172,7 +186,7 @@ export default function DiscountHubPage() {
   }, [latest, quotes]);
 
   const tickerHighlights = useMemo(() => {
-    return hydratedLatest
+    const rows = hydratedLatest
       .map((item) => {
         const price = item.livePrice ?? null;
         const fv = item.fairValue ?? null;
@@ -187,70 +201,44 @@ export default function DiscountHubPage() {
           priceSource: item.priceSource,
         };
       })
-      .filter((r): r is NonNullable<typeof r> => !!r)
-      .sort((a, b) => b.discountPct - a.discountPct);
-  }, [hydratedLatest]);
+      .filter((r): r is NonNullable<typeof r> => !!r);
+
+    rows.sort((a, b) =>
+      sortMode === "buy" ? b.discountPct - a.discountPct : a.discountPct - b.discountPct
+    );
+    return rows;
+  }, [hydratedLatest, sortMode]);
 
   return (
     <main className="min-h-screen bg-neutral-900 text-white px-6 py-8">
       <Header
         title="Discount Hub"
-        subtitle={`Live prices: ${quotesLoaded}/${symbols.length || 0} loaded${
-          quotesLoading ? " (fetching…)" : ""
-        }${quotesError ? ` • ${quotesError}` : ""}`}
+        subtitle={
+          quotesLoading
+            ? `Loading${loadingDots}`
+            : `Live prices: ${quotesLoaded}/${symbols.length || 0} loaded${
+                quotesError ? ` • ${quotesError}` : ""
+              }`
+        }
+        rightSlot={
+          <button
+            type="button"
+            onClick={() => setShowInfo((v) => !v)}
+            aria-label="Toggle info"
+            className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-[var(--good-400)] focus:outline-none focus:ring-2 focus:ring-[var(--good-400)]"
+          >
+            ?
+          </button>
+        }
       />
 
       <div className="space-y-4">
-        <div className="bg-neutral-825 border border-neutral-800 rounded-2xl p-5 text-sm text-neutral-300">
-          We capture Buy/Hold/Sell grids from incoming research and surface the most recent call for each ticker.
-          Older entries stay archived under each symbol for context.
-        </div>
-
-        {/* Live price visibility list (only tickers with FV) */}
-        <section className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 text-sm text-neutral-200">
-          <h3 className="text-base font-semibold text-white">Live price feed</h3>
-          <p className="text-xs text-neutral-400">
-            Showing symbols with a stored fair value. Live prices appear as they load.
-          </p>
-          <div className="mt-3 space-y-2 max-h-[320px] overflow-auto pr-1">
-            {hydratedLatest
-              .filter((d) => d.fairValue != null)
-              .sort((a, b) => a.symbol.localeCompare(b.symbol))
-              .map((d) => {
-                const live = d.livePrice;
-                const fv = d.fairValue;
-                const discount =
-                  live != null && fv != null && live > 0 ? ((fv - live) / live) * 100 : null;
-                return (
-                  <div
-                    key={`${d.symbol}-${d.id}`}
-                    className="flex items-center justify-between rounded-xl border border-neutral-800 bg-black/30 px-3 py-2"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="font-semibold tracking-wide">{d.symbol}</span>
-                      <span className="text-xs text-neutral-500">FV {fmtMoney(fv)}</span>
-                    </div>
-                    <div className="flex items-center gap-4 text-xs">
-                      <span className="text-neutral-400">
-                        Live: {live != null ? fmtMoney(live) : "…"}
-                      </span>
-                      <span
-                        className={
-                          discount == null
-                            ? "text-neutral-500"
-                            : discount >= 0
-                            ? "text-[var(--good-300)]"
-                            : "text-[var(--bad-300)]"
-                        }
-                      >
-                        {discount == null ? "—" : `${discount.toFixed(1)}%`}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+        {showInfo && (
+          <div className="bg-neutral-825 border border-neutral-800 rounded-2xl p-5 text-sm text-neutral-300">
+            We capture Buy/Hold/Sell grids from incoming research and surface the most recent call for each ticker.
+            Older entries stay archived under each symbol for context.
           </div>
-        </section>
+        )}
 
         {/* Top discounts list */}
         <section className="rounded-2xl border border-neutral-800 bg-neutral-825 p-4 text-sm text-neutral-200">
@@ -260,6 +248,23 @@ export default function DiscountHubPage() {
               <p className="text-xs text-neutral-400">
                 Live price (FMP) only; rows appear once a live quote is fetched. Sorted by discount vs FTV.
               </p>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-neutral-400">Order:</span>
+              {(["buy", "sell"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setSortMode(mode)}
+                  className={`rounded-md border px-2 py-1 ${
+                    sortMode === mode
+                      ? "border-[var(--highlight-400)] text-[var(--highlight-100)]"
+                      : "border-neutral-700 text-neutral-300 hover:border-[var(--highlight-400)]"
+                  }`}
+                >
+                  {mode === "buy" ? "Buys" : "Sells"}
+                </button>
+              ))}
             </div>
             {!loading && !!tickerHighlights.length && (
               <div className="flex items-center gap-2 text-xs">
@@ -301,19 +306,23 @@ export default function DiscountHubPage() {
                   }
                   className="w-full rounded-xl border border-neutral-800 bg-neutral-900/60 px-3 py-2 text-left hover:border-[var(--highlight-400)] transition-colors"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-semibold tracking-wide">{row.symbol}</span>
-                      {row.name && <span className="text-xs text-neutral-500">{row.name}</span>}
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-semibold text-[var(--good-200)]">
-                        {row.discountPct.toFixed(1)}%
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg font-semibold tracking-wide">{row.symbol}</span>
+                        {row.name && <span className="text-xs text-neutral-500">{row.name}</span>}
                       </div>
-                      <div className="text-[11px] text-neutral-500">
-                        FV {fmtMoney(row.fairValue)} • Price {fmtMoney(row.price)}
+                      <div className="text-right">
+                        <div
+                          className={`text-sm font-semibold ${
+                            row.discountPct >= 0 ? "text-[var(--good-200)]" : "text-[var(--bad-200)]"
+                          }`}
+                        >
+                          {row.discountPct.toFixed(1)}%
+                        </div>
+                        <div className="text-[11px] text-neutral-500">
+                          FV {fmtMoney(row.fairValue)} • Price {fmtMoney(row.price)}
+                        </div>
                       </div>
-                    </div>
                   </div>
                 </button>
               ))}
