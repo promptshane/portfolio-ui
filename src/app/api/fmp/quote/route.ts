@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BASE = "https://financialmodelingprep.com/api/v3";
+// Use the stable endpoint to avoid legacy/403 responses on /api/v3/quote
+const BASE = "https://financialmodelingprep.com/stable";
 
 function getApiKey(): string {
   const key = process.env.FMP_API_KEY || process.env.NEXT_PUBLIC_FMP_API_KEY;
@@ -36,7 +37,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing symbol" }, { status: 400 });
     }
     const data = await proxyJson(
-      `${BASE}/quote/${encodeURIComponent(symbol)}?apikey=${getApiKey()}`
+      `${BASE}/quote?symbol=${encodeURIComponent(symbol)}&apikey=${getApiKey()}`
     );
     return NextResponse.json(data);
   } catch (err: any) {

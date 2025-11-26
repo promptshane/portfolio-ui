@@ -63,29 +63,43 @@ export async function fetchFtvDotScore(
     const ftvData: FtvDocsResponse = await ftvRes.json().catch(() => ({ ok: false }));
     const discountData: DiscountResponse = await discountRes.json().catch(() => ({ ok: false }));
 
-    const ftv = ftvRes.ok && ftvData?.ok ? ftvData.latest ?? null : null;
-    const disc = discountRes.ok && discountData?.ok ? discountData.latest ?? null : null;
+  const ftv = ftvRes.ok && ftvData?.ok ? ftvData.latest ?? null : null;
+  const disc = discountRes.ok && discountData?.ok ? discountData.latest ?? null : null;
 
-    const ftvEstimate =
-      ftv && typeof ftv.ftvEstimate === "number" && Number.isFinite(ftv.ftvEstimate)
-        ? ftv.ftvEstimate
-        : null;
-    const ftvAsOf = ftv ? parseDate(ftv.ftvAsOf ?? ftv.confirmedAt ?? ftv.uploadedAt ?? null) : null;
+  const ftvEstimate =
+    ftv && typeof ftv.ftvEstimate === "number" && Number.isFinite(ftv.ftvEstimate)
+      ? ftv.ftvEstimate
+      : null;
+  const ftvAsOf = ftv ? parseDate(ftv.ftvAsOf ?? ftv.confirmedAt ?? ftv.uploadedAt ?? null) : null;
 
-    const discEstimate =
-      disc && typeof disc.fairValue === "number" && Number.isFinite(disc.fairValue)
-        ? disc.fairValue
-        : null;
-    const discAsOf = disc ? parseDate(disc.asOf ?? disc.createdAt ?? null) : null;
+  const discEstimate =
+    disc && typeof disc.fairValue === "number" && Number.isFinite(disc.fairValue)
+      ? disc.fairValue
+      : null;
+  const discAsOf = disc ? parseDate(disc.asOf ?? disc.createdAt ?? null) : null;
 
-    const useDiscount =
-      discEstimate !== null &&
-      (!ftvEstimate || (discAsOf !== null && ftvAsOf !== null && discAsOf > ftvAsOf));
+  // Pick the freshest source; on a tie, prefer the Morningstar PDF-derived estimate.
+  let useDiscount = false;
+  if (discEstimate !== null && ftvEstimate === null) {
+    useDiscount = true;
+  } else if (discEstimate !== null && ftvEstimate !== null) {
+    if (discAsOf !== null && ftvAsOf !== null) {
+      useDiscount = discAsOf > ftvAsOf;
+    } else if (discAsOf !== null && ftvAsOf === null) {
+      useDiscount = true;
+    } else {
+      useDiscount = false;
+    }
+  }
 
-    const estimate = useDiscount ? discEstimate : ftvEstimate;
-    const priceInput =
-      (useDiscount && (disc?.priceUsed ?? disc?.livePrice ?? disc?.currentPrice)) ??
-      price;
+  const estimate = useDiscount ? discEstimate : ftvEstimate;
+  const discPrice = disc?.priceUsed ?? disc?.livePrice ?? disc?.currentPrice;
+  const priceInput = (() => {
+    if (useDiscount && discPrice != null) return discPrice;
+    if (!useDiscount && price != null) return price;
+    if (!useDiscount && discPrice != null) return discPrice;
+    return price;
+  })();
 
     if (typeof estimate !== "number" || !Number.isFinite(estimate) || estimate === 0) return null;
     if (typeof priceInput !== "number" || !Number.isFinite(priceInput)) return null;

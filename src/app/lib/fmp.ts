@@ -1,5 +1,6 @@
 // src/app/lib/fmp.ts
-const FMP_BASE = "https://financialmodelingprep.com/api/v3";
+// FMP moved live-quote access to the /stable endpoints (v3/quote is now legacy/403).
+const FMP_BASE = "https://financialmodelingprep.com/stable";
 
 export type QuoteMini = {
   price: number | null;
@@ -11,7 +12,7 @@ export async function fetchQuotes(symbols: string[]): Promise<Record<string, Quo
   if (!key) throw new Error("FMP_API_KEY missing");
   if (!symbols?.length) throw new Error("No symbols provided");
 
-  const url = `${FMP_BASE}/quote/${encodeURIComponent(symbols.join(","))}?apikey=${key}`;
+  const url = `${FMP_BASE}/quote?symbol=${encodeURIComponent(symbols.join(","))}&apikey=${key}`;
 
   const res = await fetch(url, { cache: "no-store" });
   const text = await res.text();
@@ -31,7 +32,11 @@ export async function fetchQuotes(symbols: string[]): Promise<Record<string, Quo
     if (!sym) continue;
     out[sym] = {
       price: Number.isFinite(q?.price) ? Number(q.price) : null,
-      changesPercentage: Number.isFinite(q?.changesPercentage) ? Number(q.changesPercentage) : null,
+      changesPercentage: Number.isFinite(q?.changesPercentage)
+        ? Number(q.changesPercentage)
+        : Number.isFinite(q?.changePercentage)
+        ? Number(q.changePercentage)
+        : null,
     };
   }
   return out;

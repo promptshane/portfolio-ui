@@ -34,10 +34,18 @@ function fmtPct(n?: number | null) {
 }
 
 const badgeColors: Record<string, string> = {
-  BUY: "bg-[color:var(--good-500)/0.18] text-[var(--good-200)] border-[color:var(--good-500)/0.5]",
-  HOLD: "bg-[color:var(--mid-500)/0.18] text-[var(--mid-100)] border-[color:var(--mid-500)/0.5]",
-  SELL: "bg-[color:var(--bad-500)/0.18] text-[var(--bad-200)] border-[color:var(--bad-500)/0.5]",
+  BUY: "text-[var(--good-100)] border-[var(--good-500)] bg-[color:var(--good-500)/0.16]",
+  HOLD: "text-[var(--mid-100)] border-[var(--mid-500)] bg-[color:var(--mid-500)/0.18]",
+  SELL: "text-[var(--bad-200)] border-[var(--bad-500)] bg-[color:var(--bad-500)/0.18]",
 };
+function resolveBadgeClass(raw?: string | null) {
+  const recKey = (raw || "").trim().toUpperCase();
+  if (recKey.startsWith("BUY")) return badgeColors.BUY;
+  if (recKey.startsWith("SELL")) return badgeColors.SELL;
+  if (recKey.startsWith("HOLD")) return badgeColors.HOLD;
+  if (badgeColors[recKey]) return badgeColors[recKey];
+  return "text-neutral-200 border-neutral-600 bg-black/60";
+}
 
 const LIST_COUNTS = [10, 25, 50, 100];
 
@@ -47,6 +55,72 @@ export default function DiscountHubPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [listCount, setListCount] = useState<number>(10);
+  const [quotes, setQuotes] = useState<Record<string, { price: number | null; changesPercentage: number | null }>>({});
+  const [quotesError, setQuotesError] = useState<string | null>(null);
+  const [quotesLoading, setQuotesLoading] = useState(false);
+  const [quotesLoaded, setQuotesLoaded] = useState(0);
+
+  const symbols = useMemo(() => {
+    return Array.from(
+      new Set(
+        latest
+          .filter((i) => i.fairValue != null)
+          .map((i) => (i.symbol || "").toUpperCase())
+          .filter((s): s is string => !!s)
+      )
+    );
+  }, [latest]);
+
+  useEffect(() => {
+    if (!symbols.length) {
+      setQuotes({});
+      setQuotesLoaded(0);
+      setQuotesError(null);
+      setQuotesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let hadError = false;
+    setQuotes({});
+    setQuotesLoaded(0);
+    setQuotesError(null);
+    setQuotesLoading(true);
+
+    const chunkSize = 40; // keep URLs reasonable and reduce FMP errors
+
+    (async () => {
+      for (let i = 0; i < symbols.length; i += chunkSize) {
+        const chunk = symbols.slice(i, i + chunkSize);
+        try {
+          const res = await fetch(`/api/market/quotes?symbols=${chunk.join(",")}`, { cache: "no-store" });
+          const json = await res.json().catch(() => ({}));
+          if (cancelled) return;
+          if (res.ok && json?.data) {
+            setQuotes((prev) => {
+              const merged = { ...prev, ...json.data };
+              const loaded = Object.keys(merged).length;
+              setQuotesLoaded(Math.min(symbols.length, loaded));
+              return merged;
+            });
+          } else if (!hadError) {
+            hadError = true;
+            setQuotesError(json?.error || `Quotes HTTP ${res.status}`);
+          }
+        } catch (err: any) {
+          if (!cancelled && !hadError) {
+            hadError = true;
+            setQuotesError(String(err?.message || err));
+          }
+        }
+      }
+      if (!cancelled) setQuotesLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [symbols]);
 
   useEffect(() => {
     let aborted = false;
@@ -73,10 +147,34 @@ export default function DiscountHubPage() {
     };
   }, []);
 
+  const hydratedLatest = useMemo(() => {
+    if (!latest.length) return latest;
+    return latest.map((item) => {
+      const sym = (item.symbol || "").toUpperCase();
+      const quote = sym ? quotes?.[sym] : undefined;
+      const livePrice = Number.isFinite(quote?.price) ? Number(quote?.price) : null;
+      const priceUsed = livePrice ?? null;
+      const entry = item.entryPrice ?? null;
+      const liveReturnPct = entry && priceUsed ? ((priceUsed - entry) / entry) * 100 : null;
+      const discountPct =
+        item.fairValue && priceUsed
+          ? ((item.fairValue - priceUsed) / priceUsed) * 100
+          : null;
+      return {
+        ...item,
+        livePrice,
+        priceUsed,
+        priceSource: livePrice != null ? "live" : undefined,
+        liveReturnPct,
+        discountPct,
+      };
+    });
+  }, [latest, quotes]);
+
   const tickerHighlights = useMemo(() => {
-    return latest
+    return hydratedLatest
       .map((item) => {
-        const price = item.priceUsed ?? item.livePrice ?? item.currentPrice ?? null;
+        const price = item.livePrice ?? null;
         const fv = item.fairValue ?? null;
         if (price == null || fv == null) return null;
         const discountPct = ((fv - price) / price) * 100;
@@ -91,19 +189,68 @@ export default function DiscountHubPage() {
       })
       .filter((r): r is NonNullable<typeof r> => !!r)
       .sort((a, b) => b.discountPct - a.discountPct);
-  }, [latest]);
+  }, [hydratedLatest]);
 
   return (
     <main className="min-h-screen bg-neutral-900 text-white px-6 py-8">
-      <Header title="Discount Hub" subtitle="Buy/Hold/Sell notes from recent issues" />
+      <Header
+        title="Discount Hub"
+        subtitle={`Live prices: ${quotesLoaded}/${symbols.length || 0} loaded${
+          quotesLoading ? " (fetching…)" : ""
+        }${quotesError ? ` • ${quotesError}` : ""}`}
+      />
 
       <div className="space-y-4">
         <div className="bg-neutral-825 border border-neutral-800 rounded-2xl p-5 text-sm text-neutral-300">
-          <p>
-            We capture Buy/Hold/Sell grids from incoming research and surface the most recent call
-            for each ticker. Older entries stay archived under each symbol for context.
-          </p>
+          We capture Buy/Hold/Sell grids from incoming research and surface the most recent call for each ticker.
+          Older entries stay archived under each symbol for context.
         </div>
+
+        {/* Live price visibility list (only tickers with FV) */}
+        <section className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 text-sm text-neutral-200">
+          <h3 className="text-base font-semibold text-white">Live price feed</h3>
+          <p className="text-xs text-neutral-400">
+            Showing symbols with a stored fair value. Live prices appear as they load.
+          </p>
+          <div className="mt-3 space-y-2 max-h-[320px] overflow-auto pr-1">
+            {hydratedLatest
+              .filter((d) => d.fairValue != null)
+              .sort((a, b) => a.symbol.localeCompare(b.symbol))
+              .map((d) => {
+                const live = d.livePrice;
+                const fv = d.fairValue;
+                const discount =
+                  live != null && fv != null && live > 0 ? ((fv - live) / live) * 100 : null;
+                return (
+                  <div
+                    key={`${d.symbol}-${d.id}`}
+                    className="flex items-center justify-between rounded-xl border border-neutral-800 bg-black/30 px-3 py-2"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-semibold tracking-wide">{d.symbol}</span>
+                      <span className="text-xs text-neutral-500">FV {fmtMoney(fv)}</span>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs">
+                      <span className="text-neutral-400">
+                        Live: {live != null ? fmtMoney(live) : "…"}
+                      </span>
+                      <span
+                        className={
+                          discount == null
+                            ? "text-neutral-500"
+                            : discount >= 0
+                            ? "text-[var(--good-300)]"
+                            : "text-[var(--bad-300)]"
+                        }
+                      >
+                        {discount == null ? "—" : `${discount.toFixed(1)}%`}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </section>
 
         {/* Top discounts list */}
         <section className="rounded-2xl border border-neutral-800 bg-neutral-825 p-4 text-sm text-neutral-200">
@@ -111,7 +258,7 @@ export default function DiscountHubPage() {
             <div>
               <h3 className="text-base font-semibold text-white">Most discounted tickers</h3>
               <p className="text-xs text-neutral-400">
-                Live price (FMP) when available, otherwise article price. Sorted by discount vs FTV.
+                Live price (FMP) only; rows appear once a live quote is fetched. Sorted by discount vs FTV.
               </p>
             </div>
             {!loading && !!tickerHighlights.length && (
@@ -188,10 +335,8 @@ export default function DiscountHubPage() {
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {latest.map((item) => {
-              const recKey = (item.recommendation || "").toUpperCase();
-              const recClass =
-                recKey in badgeColors ? badgeColors[recKey] : "bg-black/60 text-neutral-200 border-neutral-600";
+            {hydratedLatest.map((item) => {
+              const recClass = resolveBadgeClass(item.recommendation);
               const hist = history[item.symbol] ?? [];
               const hasOlder = hist.length > 1;
               return (
@@ -218,13 +363,13 @@ export default function DiscountHubPage() {
                     <Stat label="Entry" value={fmtMoney(item.entryPrice)} helper={fmtDate(item.entryDate)} />
                     <Stat
                       label="Current (live)"
-                      value={fmtMoney(item.priceUsed ?? item.livePrice ?? item.currentPrice)}
-                      helper={fmtPct(item.liveReturnPct ?? item.returnPct)}
+                      value={fmtMoney(item.livePrice)}
+                      helper={item.liveReturnPct != null ? fmtPct(item.liveReturnPct) : "Awaiting live quote"}
                     />
                     <Stat
                       label="Stored price"
                       value={fmtMoney(item.currentPrice)}
-                      helper={item.priceUsed && item.currentPrice ? "Live price shown above" : undefined}
+                      helper={fmtDate(item.asOf) || fmtDateTime(item.createdAt)}
                     />
                     <Stat label="Fair Value" value={fmtMoney(item.fairValue)} />
                     <Stat label="Stop" value={fmtMoney(item.stopPrice)} />
