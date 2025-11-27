@@ -330,10 +330,18 @@ async function fetchFmpRatiosTTM(
     });
     if (!res.ok) return undefined;
     const data = await res.json();
-    const row = Array.isArray(data) && data.length ? data[0] : undefined;
+    const rows = Array.isArray(data?.ratios)
+      ? data.ratios
+      : Array.isArray(data?.rows)
+      ? data.rows
+      : Array.isArray(data)
+      ? data
+      : [];
+    const row = rows.length ? rows[0] : undefined;
     if (!row) return undefined;
     const peRatio =
       num(row?.priceToEarningsRatioTTM) ??
+      num(row?.priceToEarningsRatio) ??
       num(row?.priceEarningsRatioTTM) ??
       num(row?.priceEarningsRatio);
     const divRaw = num(
@@ -696,13 +704,13 @@ export async function evaluateStock(symIn: string, useReal: boolean): Promise<Ev
     // 9) Keep other sections as before (FTV remains mock for now)
     const rnd = seeded(sym);
     const financialScore = Math.round(40 + rnd() * 60);
-    const ftvScore = Math.round(40 + rnd() * 60);
+    const ftvScore = Number.NaN; // real mode: avoid mock FTV
     const strength = Math.round(30 + rnd() * 70);
     const stability = Math.round(30 + rnd() * 70);
     const seriesIS = trioIS.good.slice(); // placeholder mini-series
     const seriesBS = trioBS.good.slice();
     const seriesCFS = trioCFS.good.slice();
-    const seriesFtv = genSeries(80, ftvScore, 3, rnd);
+    const seriesFtv: number[] = [];
 
     return {
       sym,
@@ -924,5 +932,6 @@ export async function evaluateStock(symIn: string, useReal: boolean): Promise<Ev
       emaFast: momo.emaFast,
       emaSlow: momo.emaSlow,
     },
+    dataSource: "mock",
   } as EvalResult;
 }

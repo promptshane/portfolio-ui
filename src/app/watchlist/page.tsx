@@ -101,7 +101,7 @@ export default function WatchlistPage() {
       Array.from(new Set(items.map((i) => (i.sym || "").toUpperCase().trim()).filter(Boolean))),
     [items]
   );
-  const { quotes } = useQuotes(symbols);
+  const { quotes, loading: quotesLoading } = useQuotes(symbols);
   const [scores, setScores] = useState<Record<string, ScoreEntry>>({});
 
   const openAnalysis = (sym: string) => {
@@ -185,6 +185,17 @@ export default function WatchlistPage() {
     });
   }, [symbols, quotes, scores]);
 
+  const symbolsLoaded = useMemo(
+    () => symbols.filter((s) => scores[s] !== undefined).length,
+    [scores, symbols]
+  );
+  const tickerStatusText =
+    symbols.length === 0
+      ? null
+      : quotesLoading || symbolsLoaded < symbols.length
+      ? "Loading…"
+      : `${symbolsLoaded} Tickers Loaded`;
+
   return (
     <main className="min-h-screen bg-neutral-900 text-white px-6 py-8">
       <Header
@@ -203,6 +214,12 @@ export default function WatchlistPage() {
           }}
         >
           {notice}
+      </div>
+      )}
+
+      {tickerStatusText && (
+        <div className="mb-4 rounded-2xl border border-neutral-800 bg-neutral-825 p-4 text-sm text-neutral-300">
+          {tickerStatusText}
         </div>
       )}
 
@@ -245,14 +262,14 @@ export default function WatchlistPage() {
               </div>
 
               <div className="col-span-2 text-center">
-                <span className="px-3 py-1.5 rounded-lg bg-black/90 border border-neutral-700">
+                <span className="inline-flex w-[110px] justify-center px-2 py-1.5 text-sm font-medium">
                   {r.price != null ? `$${r.price.toFixed(2)}` : "—"}
                 </span>
               </div>
 
               <div className="col-span-2 text-center">
                 <span
-                  className={`px-3 py-1.5 rounded-lg bg-black/90 border border-neutral-700 ${
+                  className={`inline-flex w-[150px] justify-center px-2 py-1.5 text-sm font-medium ${
                     r.chg == null
                       ? "text-neutral-400"
                       : r.chg >= 0
@@ -278,16 +295,14 @@ export default function WatchlistPage() {
 
               <div className="col-span-1 text-center border-l border-neutral-700/40">
                 <span
-                  className="px-2.5 py-1 rounded-xl text-sm border text-[var(--good-400)]"
-                  style={{ borderColor: "var(--good-500)" }}
+                  className="px-2.5 py-1 rounded-xl text-sm border border-neutral-700 text-neutral-400"
                 >
                   X
                 </span>
               </div>
               <div className="col-span-1 text-center">
                 <span
-                  className="px-2.5 py-1 rounded-xl text-sm border text-[var(--good-400)]"
-                  style={{ borderColor: "var(--good-500)" }}
+                  className="px-2.5 py-1 rounded-xl text-sm border border-neutral-700 text-neutral-400"
                 >
                   Y
                 </span>

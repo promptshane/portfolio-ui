@@ -3,11 +3,13 @@
 import { EvalResult } from "../shared";
 
 export function getFTVData(result: EvalResult) {
-  const fv = result.series.ftv;
+  const rawFv = Array.isArray(result.series.ftv) ? result.series.ftv : [];
+  const fv = rawFv.filter((v) => Number.isFinite(v)) as number[];
   const n = fv.length;
-  const priceTail = result.series.price.slice(-n);
-  const conf = Math.max(0, Math.min(100, result.ftvScore));
-  const bandPct = 0.25 - (conf / 100) * 0.18;
+  const priceTail = n ? result.series.price.slice(-n) : [];
+  const confRaw = Number.isFinite(result.ftvScore) ? result.ftvScore : 0;
+  const conf = Math.max(0, Math.min(100, confRaw));
+  const bandPct = n ? 0.25 - (conf / 100) * 0.18 : 0;
   const upper = fv.map((v) => v * (1 + bandPct));
   const lower = fv.map((v) => v * (1 - bandPct));
 

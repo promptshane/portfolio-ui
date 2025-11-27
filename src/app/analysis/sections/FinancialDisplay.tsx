@@ -68,6 +68,75 @@ function FSCard({
   );
 }
 
+const RATIO_LABELS: Record<string, string> = {
+  grossProfitMargin: "Gross Profit Margin",
+  operatingProfitMargin: "Operating Profit Margin",
+  netProfitMargin: "Net Profit Margin",
+  returnOnEquity: "ROE",
+  returnOnAssets: "ROA",
+  returnOnCapitalEmployed: "ROCE",
+  currentRatio: "Current Ratio",
+  quickRatio: "Quick Ratio",
+  cashRatio: "Cash Ratio",
+  debtEquityRatio: "Debt/Equity",
+  debtRatio: "Debt Ratio",
+  interestCoverage: "Interest Coverage",
+  cashFlowToDebtRatio: "CF to Debt",
+  assetTurnover: "Asset Turnover",
+  inventoryTurnover: "Inventory Turnover",
+  receivablesTurnover: "Receivables Turnover",
+  daysOfSalesOutstanding: "Days Sales Outstanding",
+  daysOfInventoryOutstanding: "Days Inventory Outstanding",
+  daysOfPayablesOutstanding: "Days Payables Outstanding",
+  cashConversionCycle: "Cash Conversion Cycle",
+  operatingCashFlowSalesRatio: "OCF / Sales",
+  freeCashFlowOperatingCashFlowRatio: "FCF / OCF",
+  operatingCashFlowPerShare: "OCF / Share",
+  freeCashFlowPerShare: "FCF / Share",
+  cashPerShare: "Cash / Share",
+  priceEarningsRatio: "P/E",
+  priceToSalesRatio: "P/S",
+  priceToBookRatio: "P/B",
+  enterpriseValueMultiple: "EV / EBITDA",
+  priceToFreeCashFlowsRatio: "P/FCF",
+  dividendYield: "Dividend Yield",
+  priceEarningsToGrowthRatio: "PEG",
+  payoutRatio: "Payout Ratio",
+  dividendPayoutRatio: "Dividend Payout",
+};
+
+const normalizeRatioKey = (raw: string): string | null => {
+  if (!raw) return null;
+  let key = raw.trim();
+  key = key.replace(/[_\s-]*ttm$/i, "");
+  if (!key) return null;
+  key = key.replace(/[_-]([a-zA-Z0-9])/g, (_, c) => c.toUpperCase());
+  if (key.toLowerCase() === "dividendyiel") key = "dividendYield";
+  if (key.toLowerCase() === "dividendyieldpercentage") key = "dividendYield";
+  return key;
+};
+
+const aliasRatioKey = (key: string): string => {
+  const lower = key.toLowerCase();
+  if (lower === "dividendyieldpercentage") return "dividendYield";
+  if (lower === "pricetoearningsratio") return "priceEarningsRatio";
+  return key;
+};
+
+const normalizeRatiosRecord = (input: any): Record<string, number> => {
+  const out: Record<string, number> = {};
+  if (!input || typeof input !== "object") return out;
+  for (const [rawKey, rawVal] of Object.entries(input)) {
+    const numVal = Number(rawVal);
+    if (!Number.isFinite(numVal)) continue;
+    const normalized = normalizeRatioKey(rawKey);
+    if (!normalized) continue;
+    const alias = aliasRatioKey(normalized);
+    out[alias] = numVal;
+  }
+  return out;
+};
+
 type Props = {
   result: EvalResult;
   activeFS: FSKind;
@@ -89,9 +158,24 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
         const res = await fetch(`/api/fmp/ratios-ttm?symbol=${encodeURIComponent(result.sym)}`, { cache: "no-store" });
         const data = await res.json();
         if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`);
-        const rec = Array.isArray(data) && data.length ? data[0] : data?.[0] ?? data;
+
+        const rows = Array.isArray(data?.ratios)
+          ? data.ratios
+          : Array.isArray(data?.rows)
+          ? data.rows
+          : Array.isArray(data)
+          ? data
+          : [];
+
+        const rec = rows.length ? rows[0] : null;
         if (!rec || typeof rec !== "object") throw new Error("No ratios returned");
-        if (!cancelled) setRatios(rec as Record<string, number>);
+
+        const normalized = normalizeRatiosRecord(rec);
+        const hasAny = Object.keys(RATIO_LABELS).some(
+          (k) => normalized[k] !== undefined && normalized[k] !== null
+        );
+        if (!hasAny) throw new Error("No ratio data available");
+        if (!cancelled) setRatios(normalized);
       } catch (err: any) {
         if (!cancelled) setRatiosError(err?.message || "Failed to load ratios");
         if (!cancelled) setRatios(null);
@@ -103,43 +187,6 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
       cancelled = true;
     };
   }, [result.sym]);
-
-  const RATIO_LABELS: Record<string, string> = {
-    grossProfitMargin: "Gross Profit Margin",
-    operatingProfitMargin: "Operating Profit Margin",
-    netProfitMargin: "Net Profit Margin",
-    returnOnEquity: "ROE",
-    returnOnAssets: "ROA",
-    returnOnCapitalEmployed: "ROCE",
-    currentRatio: "Current Ratio",
-    quickRatio: "Quick Ratio",
-    cashRatio: "Cash Ratio",
-    debtEquityRatio: "Debt/Equity",
-    debtRatio: "Debt Ratio",
-    interestCoverage: "Interest Coverage",
-    cashFlowToDebtRatio: "CF to Debt",
-    assetTurnover: "Asset Turnover",
-    inventoryTurnover: "Inventory Turnover",
-    receivablesTurnover: "Receivables Turnover",
-    daysOfSalesOutstanding: "Days Sales Outstanding",
-    daysOfInventoryOutstanding: "Days Inventory Outstanding",
-    daysOfPayablesOutstanding: "Days Payables Outstanding",
-    cashConversionCycle: "Cash Conversion Cycle",
-    operatingCashFlowSalesRatio: "OCF / Sales",
-    freeCashFlowOperatingCashFlowRatio: "FCF / OCF",
-    operatingCashFlowPerShare: "OCF / Share",
-    freeCashFlowPerShare: "FCF / Share",
-    cashPerShare: "Cash / Share",
-    priceEarningsRatio: "P/E",
-    priceToSalesRatio: "P/S",
-    priceToBookRatio: "P/B",
-    enterpriseValueMultiple: "EV / EBITDA",
-    priceToFreeCashFlowsRatio: "P/FCF",
-    dividendYield: "Dividend Yield",
-    priceEarningsToGrowthRatio: "PEG",
-    payoutRatio: "Payout Ratio",
-    dividendPayoutRatio: "Dividend Payout",
-  };
 
   const ratioGroups: { title: string; keys: string[] }[] = useMemo(
     () => [

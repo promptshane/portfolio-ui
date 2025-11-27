@@ -1,7 +1,7 @@
 // src/app/api/news/articles/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
-import { addPdfFromBuffer, listPdfs } from "@/server/news/store";
+import { addPdfFromBuffer } from "@/server/news/store";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
@@ -49,7 +49,14 @@ function getArticleTickerMatches(
 }
 
 export async function GET() {
-  const articles = await listPdfs();
+  const articles = await prisma.newsArticle.findMany({
+    orderBy: { uploadedAt: "desc" },
+    include: {
+      discountPositions: {
+        select: { symbol: true },
+      },
+    },
+  });
 
   // Default: unauthenticated, no per-user flags.
   let viewedIds = new Set<string>();
@@ -81,6 +88,18 @@ export async function GET() {
 
   return NextResponse.json({
     articles: articles.map((a) => {
+      const positionTickers = Array.from(
+        new Set(
+          (a.discountPositions || [])
+            .map((p) =>
+              typeof p?.symbol === "string"
+                ? p.symbol.trim().toUpperCase()
+                : ""
+            )
+            .filter(Boolean)
+        )
+      );
+
       const matchedPortfolioTickers =
         uid && portfolioTickers.size
           ? getArticleTickerMatches(a, portfolioTickers)
@@ -111,6 +130,7 @@ export async function GET() {
         summarizedAt: a.summarizedAt
           ? a.summarizedAt.toISOString()
           : null,
+        positionTickers,
         fileKind,
         // New per-user flags (will be false/empty if not logged in)
         viewed: uid ? viewedIds.has(a.id) : false,

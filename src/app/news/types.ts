@@ -42,6 +42,7 @@ export type ApiArticle = {
   actionsJson: string | null;
   tickersJson: string | null;
   summarizedAt: string | null;
+  positionTickers?: string[]; // Symbols derived from positions/allocations attached to the article
   viewed?: boolean;
   hasPortfolioTicker?: boolean;
   hasWatchlistTicker?: boolean;

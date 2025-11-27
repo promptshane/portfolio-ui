@@ -11,6 +11,14 @@ type HubResponse = {
   error?: string;
 };
 
+type FtvLatest = {
+  symbol: string;
+  ftvEstimate?: number;
+  ftvAsOf?: string;
+  confirmedAt?: string;
+  uploadedAt?: string;
+};
+
 function fmtDate(value?: string | null) {
   if (!value) return "";
   const d = new Date(value);
@@ -52,27 +60,31 @@ const LIST_COUNTS = [10, 25, 50, 100];
 export default function DiscountHubPage() {
   const [latest, setLatest] = useState<DiscountPositionDto[]>([]);
   const [history, setHistory] = useState<Record<string, DiscountPositionDto[]>>({});
+  const [ftvLatest, setFtvLatest] = useState<FtvLatest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [listCount, setListCount] = useState<number>(10);
   const [sortMode, setSortMode] = useState<"buy" | "sell">("buy");
+  const [includeNews, setIncludeNews] = useState(true);
+  const [includeFtv, setIncludeFtv] = useState(true);
   const [showInfo, setShowInfo] = useState(false);
   const [quotes, setQuotes] = useState<Record<string, { price: number | null; changesPercentage: number | null }>>({});
   const [quotesError, setQuotesError] = useState<string | null>(null);
   const [quotesLoading, setQuotesLoading] = useState(false);
   const [quotesLoaded, setQuotesLoaded] = useState(0);
   const [loadingDots, setLoadingDots] = useState(".");
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   const symbols = useMemo(() => {
     return Array.from(
       new Set(
-        latest
+        [...latest, ...ftvLatest.map((f) => ({ symbol: f.symbol, fairValue: f.ftvEstimate } as any))]
           .filter((i) => i.fairValue != null)
           .map((i) => (i.symbol || "").toUpperCase())
           .filter((s): s is string => !!s)
       )
     );
-  }, [latest]);
+  }, [latest, ftvLatest]);
 
   useEffect(() => {
     if (!symbols.length) {
@@ -93,29 +105,36 @@ export default function DiscountHubPage() {
     const chunkSize = 40; // keep URLs reasonable and reduce FMP errors
 
     (async () => {
-      for (let i = 0; i < symbols.length; i += chunkSize) {
-        const chunk = symbols.slice(i, i + chunkSize);
-        try {
-          const res = await fetch(`/api/market/quotes?symbols=${chunk.join(",")}`, { cache: "no-store" });
-          const json = await res.json().catch(() => ({}));
-          if (cancelled) return;
-          if (res.ok && json?.data) {
-            setQuotes((prev) => {
-              const merged = { ...prev, ...json.data };
-              const loaded = Object.keys(merged).length;
+      const collected: Record<string, { price: number | null; changesPercentage: number | null }> = {};
+      async function runChunks(target: string[]) {
+        for (let i = 0; i < target.length; i += chunkSize) {
+          const chunk = target.slice(i, i + chunkSize);
+          try {
+            const res = await fetch(`/api/market/quotes?symbols=${chunk.join(",")}`, { cache: "no-store" });
+            const json = await res.json().catch(() => ({}));
+            if (cancelled) return;
+            if (res.ok && json?.data) {
+              Object.assign(collected, json.data);
+              const loaded = Object.keys(collected).length;
+              setQuotes({ ...collected });
               setQuotesLoaded(Math.min(symbols.length, loaded));
-              return merged;
-            });
-          } else if (!hadError) {
-            hadError = true;
-            setQuotesError(json?.error || `Quotes HTTP ${res.status}`);
-          }
-        } catch (err: any) {
-          if (!cancelled && !hadError) {
-            hadError = true;
-            setQuotesError(String(err?.message || err));
+            } else if (!hadError) {
+              hadError = true;
+              setQuotesError(json?.error || `Quotes HTTP ${res.status}`);
+            }
+          } catch (err: any) {
+            if (!cancelled && !hadError) {
+              hadError = true;
+              setQuotesError(String(err?.message || err));
+            }
           }
         }
+      }
+
+      await runChunks(symbols);
+      const missing = symbols.filter((s) => !(s in collected));
+      if (missing.length) {
+        await runChunks(missing);
       }
       if (!cancelled) setQuotesLoading(false);
     })();
@@ -123,7 +142,7 @@ export default function DiscountHubPage() {
     return () => {
       cancelled = true;
     };
-  }, [symbols]);
+  }, [symbols, refreshNonce]);
 
   useEffect(() => {
     let aborted = false;
@@ -131,14 +150,28 @@ export default function DiscountHubPage() {
       setError(null);
       setLoading(true);
       try {
-        const res = await fetch("/api/discounts", { cache: "no-store" });
-        const data: HubResponse = await res.json();
-        if (!res.ok || !data.ok) {
-          throw new Error(data?.error || `HTTP ${res.status}`);
+        const [newsRes, ftvRes] = await Promise.all([
+          fetch("/api/discounts", { cache: "no-store" }),
+          fetch("/api/ftv/all-latest", { cache: "no-store" }),
+        ]);
+
+        const newsData: HubResponse = await newsRes.json();
+        const ftvData: { ok: boolean; items?: FtvLatest[]; error?: string } = await ftvRes
+          .json()
+          .catch(() => ({ ok: false }));
+
+        if (!newsRes.ok || !newsData.ok) {
+          throw new Error(newsData?.error || `HTTP ${newsRes.status}`);
         }
         if (aborted) return;
-        setLatest(data.latest ?? []);
-        setHistory(data.history ?? {});
+        setLatest(newsData.latest ?? []);
+        setHistory(newsData.history ?? {});
+
+        if (ftvRes.ok && ftvData?.ok) {
+          setFtvLatest(ftvData.items ?? []);
+        } else {
+          setFtvLatest([]);
+        }
       } catch (err: any) {
         if (!aborted) setError(err?.message || "Failed to load discount data.");
       } finally {
@@ -160,6 +193,20 @@ export default function DiscountHubPage() {
     }, 450);
     return () => clearInterval(id);
   }, [quotesLoading]);
+
+  const subtitleText = (() => {
+    const showLoading = quotesLoading || loading || (symbols.length > 0 && quotesLoaded === 0);
+    if (showLoading) return `Loading${loadingDots}`;
+    return `Live prices: ${quotesLoaded}/${symbols.length || 0} loaded${quotesError ? ` • ${quotesError}` : ""}`;
+  })();
+
+  const handleRefresh = () => {
+    setQuotes({});
+    setQuotesLoaded(0);
+    setQuotesError(null);
+    setQuotesLoading(true);
+    setRefreshNonce((n) => n + 1);
+  };
 
   const hydratedLatest = useMemo(() => {
     if (!latest.length) return latest;
@@ -185,8 +232,48 @@ export default function DiscountHubPage() {
     });
   }, [latest, quotes]);
 
+  const hydratedFtv = useMemo(() => {
+    if (!ftvLatest.length) return [] as DiscountPositionDto[];
+    return ftvLatest.map((item) => {
+      const sym = (item.symbol || "").toUpperCase();
+      const quote = sym ? quotes?.[sym] : undefined;
+      const livePrice = Number.isFinite(quote?.price) ? Number(quote?.price) : null;
+      const fairValue = typeof item.ftvEstimate === "number" ? item.ftvEstimate : null;
+      const priceUsed = livePrice ?? null;
+      const discountPct = fairValue && priceUsed ? ((fairValue - priceUsed) / priceUsed) * 100 : null;
+      const asOf = item.ftvAsOf ?? item.confirmedAt ?? item.uploadedAt ?? new Date().toISOString();
+      return {
+        id: Number.NaN,
+        symbol: sym,
+        name: null,
+        recommendation: "—",
+        allocation: null,
+        entryDate: null,
+        entryPrice: null,
+        currentPrice: null,
+        returnPct: null,
+        fairValue,
+        stopPrice: null,
+        notes: null,
+        asOf,
+        articleId: "",
+        articleTitle: "",
+        articleDate: null,
+        createdAt: asOf,
+        livePrice,
+        liveReturnPct: null,
+        priceUsed,
+        priceSource: livePrice != null ? "live" : undefined,
+        discountPct,
+      } as DiscountPositionDto;
+    });
+  }, [ftvLatest, quotes]);
+
   const tickerHighlights = useMemo(() => {
-    const rows = hydratedLatest
+    const rows = [
+      ...(includeNews ? hydratedLatest : []),
+      ...(includeFtv ? hydratedFtv : []),
+    ]
       .map((item) => {
         const price = item.livePrice ?? null;
         const fv = item.fairValue ?? null;
@@ -207,28 +294,32 @@ export default function DiscountHubPage() {
       sortMode === "buy" ? b.discountPct - a.discountPct : a.discountPct - b.discountPct
     );
     return rows;
-  }, [hydratedLatest, sortMode]);
+  }, [hydratedLatest, hydratedFtv, sortMode, includeNews, includeFtv]);
 
   return (
     <main className="min-h-screen bg-neutral-900 text-white px-6 py-8">
       <Header
         title="Discount Hub"
-        subtitle={
-          quotesLoading
-            ? `Loading${loadingDots}`
-            : `Live prices: ${quotesLoaded}/${symbols.length || 0} loaded${
-                quotesError ? ` • ${quotesError}` : ""
-              }`
-        }
+        subtitle={subtitleText}
         rightSlot={
-          <button
-            type="button"
-            onClick={() => setShowInfo((v) => !v)}
-            aria-label="Toggle info"
-            className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-[var(--good-400)] focus:outline-none focus:ring-2 focus:ring-[var(--good-400)]"
-          >
-            ?
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRefresh}
+              aria-label="Refresh live prices"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-[var(--highlight-400)] focus:outline-none focus:ring-2 focus:ring-[var(--highlight-400)]"
+            >
+              ↻
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowInfo((v) => !v)}
+              aria-label="Toggle info"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-[var(--good-400)] focus:outline-none focus:ring-2 focus:ring-[var(--good-400)]"
+            >
+              ?
+            </button>
+          </div>
         }
       />
 
@@ -265,6 +356,26 @@ export default function DiscountHubPage() {
                   {mode === "buy" ? "Buys" : "Sells"}
                 </button>
               ))}
+            </div>
+            <div className="flex items-center gap-3 text-xs text-neutral-300">
+              <label className="inline-flex items-center gap-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeNews}
+                  onChange={(e) => setIncludeNews(e.target.checked)}
+                  className="accent-[var(--highlight-400)]"
+                />
+                News Data
+              </label>
+              <label className="inline-flex items-center gap-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeFtv}
+                  onChange={(e) => setIncludeFtv(e.target.checked)}
+                  className="accent-[var(--highlight-400)]"
+                />
+                Morningstar Data
+              </label>
             </div>
             {!loading && !!tickerHighlights.length && (
               <div className="flex items-center gap-2 text-xs">
@@ -309,19 +420,23 @@ export default function DiscountHubPage() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
                         <span className="text-lg font-semibold tracking-wide">{row.symbol}</span>
-                        {row.name && <span className="text-xs text-neutral-500">{row.name}</span>}
+                      {row.name && <span className="text-xs text-neutral-500">{row.name}</span>}
+                    </div>
+                    <div className="text-right">
+                      <div
+                        className={`text-sm font-semibold ${
+                          row.discountPct >= 5
+                            ? "text-[var(--good-200)]"
+                            : row.discountPct <= -5
+                            ? "text-[var(--bad-200)]"
+                            : "text-[var(--mid-100)]"
+                        }`}
+                      >
+                        {row.discountPct.toFixed(1)}%
                       </div>
-                      <div className="text-right">
-                        <div
-                          className={`text-sm font-semibold ${
-                            row.discountPct >= 0 ? "text-[var(--good-200)]" : "text-[var(--bad-200)]"
-                          }`}
-                        >
-                          {row.discountPct.toFixed(1)}%
-                        </div>
-                        <div className="text-[11px] text-neutral-500">
-                          FV {fmtMoney(row.fairValue)} • Price {fmtMoney(row.price)}
-                        </div>
+                      <div className="text-[11px] text-neutral-500">
+                        FV {fmtMoney(row.fairValue)} • Price {fmtMoney(row.price)}
+                      </div>
                       </div>
                   </div>
                 </button>
@@ -426,6 +541,64 @@ export default function DiscountHubPage() {
             })}
           </div>
         )}
+
+        <div className="border-t border-neutral-800 my-4" />
+
+        <section className="rounded-2xl border border-neutral-800 bg-neutral-825 p-4 text-sm text-neutral-200">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-white">Morningstar PDF FTVs</h3>
+              <p className="text-xs text-neutral-400">
+                Parsed from uploaded Morningstar PDFs; live prices overlay when available.
+              </p>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="mt-3 rounded-xl border border-neutral-800 bg-black/30 px-3 py-2 text-neutral-300">
+              Loading…
+            </div>
+          ) : !ftvLatest.length ? (
+            <div className="mt-3 rounded-xl border border-neutral-800 bg-black/30 px-3 py-2 text-neutral-400">
+              No Morningstar FTV data yet.
+            </div>
+          ) : (
+            <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {hydratedFtv.map((item) => {
+                return (
+                  <div
+                    key={`${item.symbol}-${item.asOf}`}
+                    className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 shadow-inner"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-xl font-semibold tracking-wide">
+                          {item.symbol}
+                        </div>
+                        <div className="text-xs text-neutral-500">
+                          As of {fmtDate(item.asOf) || fmtDateTime(item.createdAt)}
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full border text-xs text-neutral-200 border-neutral-600 bg-black/60">
+                        FTV
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-neutral-200">
+                      <Stat
+                        label="Current (live)"
+                        value={fmtMoney(item.livePrice)}
+                        helper={item.livePrice != null ? "" : "Awaiting live quote"}
+                      />
+                      <Stat label="Fair Value" value={fmtMoney(item.fairValue)} />
+                      <Stat label="As of" value={fmtDate(item.asOf) || fmtDateTime(item.createdAt)} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </main>
   );

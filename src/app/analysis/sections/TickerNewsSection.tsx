@@ -73,9 +73,13 @@ export default function TickerNewsSection({
         const upperSymbol = normalizedSymbol.toUpperCase();
 
         const filteredBySymbol = mapped.filter((item) => {
-          const articleTickers = item.tickers.map((t) =>
-            t.trim().toUpperCase()
-          );
+          const articleTickers = [
+            ...item.tickers,
+            ...(item.portfolioTickers ?? []),
+            ...(item.watchlistTickers ?? []),
+          ]
+            .map((t) => t.trim().toUpperCase())
+            .filter(Boolean);
           return articleTickers.includes(upperSymbol);
         });
 

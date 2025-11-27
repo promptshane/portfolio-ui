@@ -107,17 +107,20 @@ export function mapApiArticleToNewsItem(a: ApiArticle): NewsItem | null {
   let tickers: string[] = [];
   const tickerDetails: NewsTickerDetail[] = [];
 
+  const appendTicker = (symbol: string, name: string) => {
+    const sym = symbol.trim();
+    if (!sym) return;
+    tickers.push(sym);
+    tickerDetails.push({ symbol: sym, name });
+  };
+
   if (a.tickersJson) {
     try {
       const parsed = JSON.parse(a.tickersJson);
       if (Array.isArray(parsed)) {
         for (const v of parsed) {
           if (typeof v === "string") {
-            const symbol = v.trim();
-            if (symbol) {
-              tickers.push(symbol);
-              tickerDetails.push({ symbol, name: "" });
-            }
+            appendTicker(v, "");
           } else if (v && typeof (v as any).symbol === "string") {
             const symbol = (v as any).symbol.trim();
             if (!symbol) continue;
@@ -125,13 +128,22 @@ export function mapApiArticleToNewsItem(a: ApiArticle): NewsItem | null {
               typeof (v as any).name === "string"
                 ? (v as any).name.trim()
                 : "";
-            tickers.push(symbol);
-            tickerDetails.push({ symbol, name });
+            appendTicker(symbol, name);
           }
         }
       }
     } catch {
       // ignore parse errors
+    }
+  }
+
+  // Pull tickers from any attached positions (allocation/FTV tables) so that
+  // articles with structured data still show up for the relevant ticker even
+  // if the summary text doesn't explicitly mention it.
+  if (Array.isArray(a.positionTickers)) {
+    for (const v of a.positionTickers) {
+      if (typeof v !== "string") continue;
+      appendTicker(v, "");
     }
   }
 

@@ -143,10 +143,32 @@ export default function FTVDisplay({ result }: Props) {
   // ---------------- Existing FTV chart data (for fallback) ----------------
   const d = getFTVData(result);
 
-  const pathFrom = (vals: number[]) => {
-    const pad = d.pad, w = d.w, h = d.h;
-    const all = [...d.upper, ...d.lower, ...d.priceTail, ...d.fv];
-    const min = Math.min(...all), max = Math.max(...all);
+  const hasFallbackSeries =
+    d.n > 0 &&
+    d.fv.length === d.n &&
+    d.priceTail.length >= d.n &&
+    d.fv.every((v) => Number.isFinite(v)) &&
+    d.priceTail.every((v) => Number.isFinite(v));
+
+  let center: ReturnType<typeof pathFrom> | null = null;
+  let price: ReturnType<typeof pathFrom> | null = null;
+  let upper: ReturnType<typeof pathFrom> | null = null;
+  let lower: ReturnType<typeof pathFrom> | null = null;
+  let areaUnderPrice = "";
+  let areaAbovePrice = "";
+  let areaAboveUpper = "";
+  let areaBelowLower = "";
+  let bandPoly = "";
+
+  function pathFrom(vals: number[]) {
+    const pad = d.pad,
+      w = d.w,
+      h = d.h;
+    const all = [...d.upper, ...d.lower, ...d.priceTail, ...d.fv].filter((v) =>
+      Number.isFinite(v)
+    );
+    const min = all.length ? Math.min(...all) : 0;
+    const max = all.length ? Math.max(...all) : 1;
     const sx = (w - 2 * pad) / Math.max(1, d.n - 1);
     const sy = max === min ? 1 : (h - 2 * pad) / (max - min);
     const X = (i: number) => pad + i * sx;
@@ -155,27 +177,32 @@ export default function FTVDisplay({ result }: Props) {
     let p = `M ${X(0)} ${Y(vals[0])}`;
     for (let i = 1; i < vals.length; i++) p += ` L ${X(i)} ${Y(vals[i])}`;
     return { p, X, Y, min, max };
-  };
+  }
 
-  const center = pathFrom(d.fv);
-  const price = pathFrom(d.priceTail);
-  const upper = pathFrom(d.upper);
-  const lower = pathFrom(d.lower);
+  if (hasFallbackSeries) {
+    center = pathFrom(d.fv);
+    price = pathFrom(d.priceTail);
+    upper = pathFrom(d.upper);
+    lower = pathFrom(d.lower);
 
-  const leftX = d.pad, rightX = d.w - d.pad;
-  const areaUnderPrice = `${price.p} L ${rightX} ${d.botY} L ${leftX} ${d.botY} Z`;
-  const areaAbovePrice = `${price.p} L ${rightX} ${d.topY} L ${leftX} ${d.topY} Z`;
-  const areaAboveUpper = `${upper.p} L ${rightX} ${d.topY} L ${leftX} ${d.topY} Z`;
-  const areaBelowLower = `${lower.p} L ${rightX} ${d.botY} L ${leftX} ${d.botY} Z`;
+    const leftX = d.pad,
+      rightX = d.w - d.pad;
+    areaUnderPrice = `${price.p} L ${rightX} ${d.botY} L ${leftX} ${d.botY} Z`;
+    areaAbovePrice = `${price.p} L ${rightX} ${d.topY} L ${leftX} ${d.topY} Z`;
+    areaAboveUpper = `${upper.p} L ${rightX} ${d.topY} L ${leftX} ${d.topY} Z`;
+    areaBelowLower = `${lower.p} L ${rightX} ${d.botY} L ${leftX} ${d.botY} Z`;
 
-  let bandPoly = `M ${upper.X(0)} ${upper.Y(d.upper[0])}`;
-  for (let i = 1; i < d.n; i++) bandPoly += ` L ${upper.X(i)} ${upper.Y(d.upper[i])}`;
-  for (let i = d.n - 1; i >= 0; i--) bandPoly += ` L ${lower.X(i)} ${lower.Y(d.lower[i])}`;
-  bandPoly += " Z";
+    bandPoly = `M ${upper.X(0)} ${upper.Y(d.upper[0])}`;
+    for (let i = 1; i < d.n; i++)
+      bandPoly += ` L ${upper.X(i)} ${upper.Y(d.upper[i])}`;
+    for (let i = d.n - 1; i >= 0; i--)
+      bandPoly += ` L ${lower.X(i)} ${lower.Y(d.lower[i])}`;
+    bandPoly += " Z";
+  }
 
   // Fallback FVE for tiles if the PDF hasn't been parsed for FVE yet
   const fallbackFve =
-    Array.isArray(d.fv) && d.fv.length ? d.fv[d.fv.length - 1] : undefined;
+    hasFallbackSeries && d.fv.length ? d.fv[d.fv.length - 1] : undefined;
 
   const parseDateSafe = (val?: string | null) => {
     if (!val) return null;
@@ -291,6 +318,8 @@ export default function FTVDisplay({ result }: Props) {
   const minV = scaleVals.length ? Math.min(...scaleVals) : 0;
   const maxV = scaleVals.length ? Math.max(...scaleVals) : 1;
   const nPts = prices.length;
+  const showNewGraph = parsedFve !== undefined && hasSeries;
+  const showLegacyGraph = !showNewGraph && hasFallbackSeries;
   const sx = (W - 2 * PAD) / Math.max(1, nPts - 1);
   const sy = maxV === minV ? 1 : (H - 2 * PAD) / (maxV - minV);
   const Xn = (i: number) => PAD + i * sx;
@@ -356,6 +385,16 @@ export default function FTVDisplay({ result }: Props) {
 
   const summaryRatio = hoverPrice && hover.show ? hoverPrice / fve! : fve && Number.isFinite(result.price) ? result.price / fve : undefined;
   const summaryTone = toneFromRatio(summaryRatio);
+
+  const ftvIndicatorClass = summaryTone
+    ? summaryTone === "good"
+      ? "bg-[var(--good-500)]"
+      : summaryTone === "mid"
+      ? "bg-[var(--mid-400)]"
+      : "bg-[var(--bad-500)]"
+    : Number.isFinite(result.ftvScore)
+    ? dotClass(result.ftvScore)
+    : "bg-neutral-700";
 
   const hoverTone =
     hoverPrice !== undefined && fve !== undefined && hover.show
@@ -435,13 +474,7 @@ export default function FTVDisplay({ result }: Props) {
                   onClick={handleDevAuth}
                   onKeyDown={(e) => (e.key === "Enter" || e.key === " " ? handleDevAuth() : undefined)}
                   className={`w-5 h-5 rounded-full border border-neutral-700 shadow-[0_0_0_3px_rgba(0,0,0,0.35)] cursor-pointer ${
-                    summaryTone
-                      ? summaryTone === "good"
-                        ? "bg-[var(--good-500)]"
-                        : summaryTone === "mid"
-                        ? "bg-[var(--mid-400)]"
-                        : "bg-[var(--bad-500)]"
-                      : dotClass(result.ftvScore)
+                    ftvIndicatorClass
                   } ${loading ? "opacity-70" : ""}`}
                   title={isDev ? "Developer mode enabled" : "Click to enter developer mode"}
                 />
@@ -489,7 +522,7 @@ export default function FTVDisplay({ result }: Props) {
 
           {/* Graph */}
           <div className="bg-neutral-800 rounded-2xl p-4 border border-neutral-700">
-            {parsedFve !== undefined && hasSeries ? (
+            {showNewGraph ? (
               <svg
                 viewBox={`0 0 ${W} ${H}`}
                 className="w-full h-[180px]"
@@ -583,24 +616,28 @@ export default function FTVDisplay({ result }: Props) {
 
                 <rect x="0" y="0" width={W} height={H} fill="transparent" />
               </svg>
-            ) : (
+            ) : showLegacyGraph ? (
               <svg viewBox="0 0 1000 200" className="w-full h-[180px]" preserveAspectRatio="none">
                 <defs>
                   <clipPath id="clipAboveUpper"><path d={areaAboveUpper} /></clipPath>
                   <clipPath id="clipBelowLower"><path d={areaBelowLower} /></clipPath>
                 </defs>
                 <path d={bandPoly} fill="var(--mid-400)" fillOpacity="0.14" />
-                <path d={upper.p}  fill="none" stroke="var(--mid-400)" strokeWidth={1.2} />
-                <path d={lower.p}  fill="none" stroke="var(--mid-400)" strokeWidth={1.2} />
-                <path d={center.p} fill="none" stroke="var(--mid-400)" strokeDasharray="4 4" strokeWidth={1.2} />
+                <path d={upper!.p}  fill="none" stroke="var(--mid-400)" strokeWidth={1.2} />
+                <path d={lower!.p}  fill="none" stroke="var(--mid-400)" strokeWidth={1.2} />
+                <path d={center!.p} fill="none" stroke="var(--mid-400)" strokeDasharray="4 4" strokeWidth={1.2} />
                 <g clipPath="url(#clipAboveUpper)">
                   <path d={areaUnderPrice} fill="var(--bad-500)" fillOpacity="0.22" />
                 </g>
                 <g clipPath="url(#clipBelowLower)">
                   <path d={areaAbovePrice} fill="var(--good-500)" fillOpacity="0.22" />
                 </g>
-                <path d={price.p} fill="none" stroke="#e5e7eb" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                <path d={price!.p} fill="none" stroke="#e5e7eb" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
               </svg>
+            ) : (
+              <div className="text-sm text-neutral-300 text-center py-10">
+                No FTV graph available yet.
+              </div>
             )}
           </div>
 

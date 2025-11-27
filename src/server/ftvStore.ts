@@ -95,6 +95,17 @@ async function readIndex(): Promise<IndexShape> {
   }
 }
 
+async function listAllLatest(): Promise<FtvDocMeta[]> {
+  const idx = await readIndex();
+  const out: FtvDocMeta[] = [];
+  for (const arr of Object.values(idx)) {
+    if (Array.isArray(arr) && arr.length) {
+      out.push(arr[arr.length - 1]);
+    }
+  }
+  return out;
+}
+
 async function writeIndex(idx: IndexShape) {
   const payload = JSON.stringify(idx, null, 2);
   if (s3Enabled) {
@@ -283,6 +294,7 @@ export async function getDocsResponse(symbol: string) {
 
 export const ftvStore = {
   list,
+  listAllLatest,
   getLatest,
   addPdf,
   confirmLatest,

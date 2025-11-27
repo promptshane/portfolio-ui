@@ -273,7 +273,7 @@ export default function PortfolioPage() {
       ),
     [holdings]
   );
-  const { quotes } = useQuotes(symbols);
+  const { quotes, loading: quotesLoading } = useQuotes(symbols);
 
   useEffect(() => {
     let cancelled = false;
@@ -453,6 +453,17 @@ export default function PortfolioPage() {
     ]
   );
 
+  const symbolsLoaded = useMemo(
+    () => symbols.filter((s) => scores[s] !== undefined).length,
+    [scores, symbols]
+  );
+  const tickerStatusText =
+    symbols.length === 0
+      ? null
+      : quotesLoading || symbolsLoaded < symbols.length
+      ? "Loading…"
+      : `${symbolsLoaded} Tickers Loaded`;
+
   // Save holdings
   async function saveToServer(list: Holding[]) {
     try {
@@ -534,6 +545,12 @@ export default function PortfolioPage() {
           }}
         >
           {notice}
+        </div>
+      )}
+
+      {tickerStatusText && (
+        <div className="mb-4 rounded-2xl border border-neutral-800 bg-neutral-825 p-4 text-sm text-neutral-300">
+          {tickerStatusText}
         </div>
       )}
 

@@ -75,6 +75,7 @@ export type EvalResult = {
   overallScore: number;
   financialScore: number;
   ftvScore: number;
+  dataSource?: "real" | "mock";
   strength: number;
   stability: number;
   keyStats?: KeyStats;
