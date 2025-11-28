@@ -37,9 +37,11 @@ export type KeyStats = {
 /* ====== FTV doc types for dev upload/confirm UI ====== */
 export type FtvDocMeta = {
   symbol: string;
-  url: string;
-  uploadedAt: string;
+  url?: string;
+  filename?: string;
+  uploadedAt?: string;
   confirmedAt?: string;
+  missingConfirmed?: boolean;
 
   // Optional fields parsed from the PDF (first page)
   ftvEstimate?: number;

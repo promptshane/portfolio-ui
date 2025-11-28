@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     }
 
     const filename = latest.filename || `${symbol}.pdf`;
-    return new NextResponse(buf, {
+    return new NextResponse(buf as any, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
