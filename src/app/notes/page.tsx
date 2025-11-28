@@ -409,6 +409,44 @@ export default function NotesPage() {
     }
   }
 
+  async function deleteRepost() {
+    if (!repostDraft) return;
+    setRepostDraft((prev) => (prev ? { ...prev, submitting: true, error: null } : prev));
+    try {
+      const res = await fetch("/api/notes/repost", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ articleId: repostDraft.articleId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+      setItems((prev) =>
+        prev.map((notesItem) => {
+          if (notesItem.article.id !== repostDraft.articleId && notesItem.id !== repostDraft.articleId) {
+            return notesItem;
+          }
+          return {
+            ...notesItem,
+            reposts: notesItem.reposts.filter((r) => !r.isMine),
+          };
+        })
+      );
+      setRepostDraft(null);
+    } catch (err) {
+      setRepostDraft((prev) =>
+        prev
+          ? {
+              ...prev,
+              submitting: false,
+              error: err instanceof Error ? err.message : "Failed to delete repost.",
+            }
+          : prev
+      );
+    }
+  }
+
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
       const dateISO = item.article.dateISO;
@@ -591,6 +629,7 @@ export default function NotesPage() {
             )
           }
           onSubmit={submitRepost}
+          onDelete={repostDraft.mode === "edit" ? deleteRepost : undefined}
         />
       )}
     </main>

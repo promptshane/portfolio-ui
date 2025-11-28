@@ -15,6 +15,29 @@ type ProfileSocialResponse = {
   repostCount: number;
 };
 
+type FamilyMember = {
+  userId: number;
+  username: string;
+  preferredName: string | null;
+  role: string | null;
+};
+
+type Family = {
+  id: number;
+  name: string;
+  ownerId: number | null;
+  role: string | null;
+  members: FamilyMember[];
+};
+
+type FamilyInvite = {
+  id: number;
+  familyId: number;
+  familyName: string;
+  fromUsername: string | null;
+  createdAt: string;
+};
+
 export default function ProfilePage() {
   const [following, setFollowing] = useState<FollowUser[]>([]);
   const [followers, setFollowers] = useState<FollowUser[]>([]);
@@ -26,6 +49,16 @@ export default function ProfilePage() {
 
   const [followError, setFollowError] = useState<string | null>(null);
   const [followBusy, setFollowBusy] = useState<boolean>(false);
+  const [families, setFamilies] = useState<Family[]>([]);
+  const [familyInvites, setFamilyInvites] = useState<FamilyInvite[]>([]);
+  const [familyLoading, setFamilyLoading] = useState(true);
+  const [familyError, setFamilyError] = useState<string | null>(null);
+  const [newFamilyName, setNewFamilyName] = useState("");
+  const [inviteInputs, setInviteInputs] = useState<Record<number, string>>({});
+  const [forceInputs, setForceInputs] = useState<Record<number, string>>({});
+  const [canForceAdd, setCanForceAdd] = useState(false);
+  const [overseenUsernames, setOverseenUsernames] = useState<string[]>([]);
+  const [familyBusy, setFamilyBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -72,6 +105,56 @@ export default function ProfilePage() {
     };
   }, []);
 
+  const hydrateFamilyState = (payload: any) => {
+    const fams: Family[] = Array.isArray(payload?.families) ? payload.families : [];
+    const invs: FamilyInvite[] = Array.isArray(payload?.invites) ? payload.invites : [];
+    setFamilies(fams);
+    setFamilyInvites(invs);
+    setCanForceAdd(Boolean(payload?.canForceAdd));
+    setOverseenUsernames(
+      Array.isArray(payload?.overseenUsernames)
+        ? payload.overseenUsernames.map((u: any) => String(u || "").toLowerCase()).filter(Boolean)
+        : []
+    );
+  };
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        setFamilyLoading(true);
+        setFamilyError(null);
+        const res = await fetch("/api/family", { cache: "no-store" });
+        if (!active) return;
+        if (res.status === 401) {
+          setFamilies([]);
+          setFamilyInvites([]);
+          setFamilyError("Sign in to manage your families.");
+          return;
+        }
+        if (!res.ok) {
+          const msg = await res.text().catch(() => "");
+          setFamilyError(msg || `Family service unavailable (${res.status}).`);
+          setFamilies([]);
+          setFamilyInvites([]);
+          return;
+        }
+        const data = await res.json();
+        if (!active) return;
+        hydrateFamilyState(data);
+      } catch (err) {
+        if (!active) return;
+        console.error("Failed to load family context", err);
+        setFamilyError("Failed to load family data.");
+      } finally {
+        if (active) setFamilyLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // Remove follow (persists via API when we have a numeric id).
   const handleRemove = async (id: string) => {
     const numericId = Number(id);
@@ -90,6 +173,133 @@ export default function ProfilePage() {
     } finally {
       // Always update local UI so it feels responsive.
       setFollowing((prev) => prev.filter((u) => u.id !== id));
+    }
+  };
+
+  const createFamily = async () => {
+    if (!newFamilyName.trim()) return;
+    setFamilyBusy(true);
+    try {
+      const res = await fetch("/api/family", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create", name: newFamilyName }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      hydrateFamilyState(data);
+      setNewFamilyName("");
+    } catch (err) {
+      console.error("Failed to create family", err);
+      setFamilyError(err instanceof Error ? err.message : "Could not create family.");
+    } finally {
+      setFamilyBusy(false);
+    }
+  };
+
+  const sendInvite = async (familyId: number) => {
+    const input = inviteInputs[familyId] || "";
+    const username = input.trim().toLowerCase();
+    if (!username) return;
+    setFamilyBusy(true);
+    try {
+      const res = await fetch("/api/family", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "invite", familyId, username }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      hydrateFamilyState(data);
+      setInviteInputs((prev) => ({ ...prev, [familyId]: "" }));
+    } catch (err) {
+      console.error("Failed to invite user", err);
+      setFamilyError(err instanceof Error ? err.message : "Could not invite user.");
+    } finally {
+      setFamilyBusy(false);
+    }
+  };
+
+  const acceptInvite = async (inviteId: number) => {
+    setFamilyBusy(true);
+    try {
+      const res = await fetch("/api/family", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "acceptInvite", inviteId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      hydrateFamilyState(data);
+    } catch (err) {
+      console.error("Failed to accept invite", err);
+      setFamilyError(err instanceof Error ? err.message : "Could not accept invite.");
+    } finally {
+      setFamilyBusy(false);
+    }
+  };
+
+  const declineInvite = async (inviteId: number) => {
+    setFamilyBusy(true);
+    try {
+      const res = await fetch("/api/family", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "declineInvite", inviteId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      hydrateFamilyState(data);
+    } catch (err) {
+      console.error("Failed to decline invite", err);
+      setFamilyError(err instanceof Error ? err.message : "Could not decline invite.");
+    } finally {
+      setFamilyBusy(false);
+    }
+  };
+
+  const forceAdd = async (familyId: number) => {
+    const raw = forceInputs[familyId] || "";
+    const usernames = raw
+      .split(/[, ]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    if (!usernames.length) return;
+    setFamilyBusy(true);
+    try {
+      const res = await fetch("/api/family", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "forceAdd", familyId, usernames }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      hydrateFamilyState(data);
+      setForceInputs((prev) => ({ ...prev, [familyId]: "" }));
+    } catch (err) {
+      console.error("Failed to force add members", err);
+      setFamilyError(err instanceof Error ? err.message : "Could not add members.");
+    } finally {
+      setFamilyBusy(false);
+    }
+  };
+
+  const leaveFamily = async (familyId: number) => {
+    setFamilyBusy(true);
+    try {
+      const res = await fetch("/api/family", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "leave", familyId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      hydrateFamilyState(data);
+    } catch (err) {
+      console.error("Failed to leave family", err);
+      setFamilyError(err instanceof Error ? err.message : "Could not leave family.");
+    } finally {
+      setFamilyBusy(false);
     }
   };
 
@@ -196,6 +406,164 @@ export default function ProfilePage() {
             <p>Followers: {followers.length}</p>
             <p>Reposts made: {repostCount}</p>
             <p>Friends: {friends.length}</p>
+          </div>
+        </section>
+
+        {/* Family section */}
+        <section className="rounded-2xl border border-neutral-700 bg-neutral-800 px-4 py-4 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-neutral-200">Family</h2>
+              <p className="text-xs text-neutral-400">
+                Create or join a family to share verified emails and auto-follow each other.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Family name"
+                value={newFamilyName}
+                onChange={(e) => setNewFamilyName(e.target.value)}
+                className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-[var(--highlight-400)]"
+              />
+              <button
+                type="button"
+                onClick={createFamily}
+                disabled={familyBusy}
+                className="inline-flex items-center rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-medium text-neutral-100 hover:border-[var(--highlight-400)] disabled:opacity-60"
+              >
+                {familyBusy ? "Working…" : "Create"}
+              </button>
+            </div>
+          </div>
+
+          {familyLoading ? (
+            <p className="text-sm text-neutral-400">Loading family info…</p>
+          ) : familyError ? (
+            <p className="text-sm text-red-400">{familyError}</p>
+          ) : null}
+
+          {familyInvites.length > 0 && (
+            <div className="rounded-xl border border-neutral-700 bg-neutral-900/60 p-3 space-y-2">
+              <div className="text-xs uppercase tracking-wide text-neutral-400">Invites</div>
+              {familyInvites.map((inv) => (
+                <div key={inv.id} className="flex items-center justify-between gap-2 text-sm">
+                  <div>
+                    <div className="font-semibold text-neutral-100">{inv.familyName}</div>
+                    <div className="text-xs text-neutral-500">
+                      From {inv.fromUsername || "someone"} • {new Date(inv.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => acceptInvite(inv.id)}
+                      disabled={familyBusy}
+                      className="rounded-lg border border-[var(--good-500)] bg-[var(--good-500)]/10 px-3 py-1.5 text-xs font-semibold text-[var(--good-100)] hover:border-[var(--good-400)] disabled:opacity-60"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => declineInvite(inv.id)}
+                      disabled={familyBusy}
+                      className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-neutral-200 hover:border-neutral-500 disabled:opacity-60"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {families.length === 0 && !familyLoading && !familyError ? (
+            <p className="text-sm text-neutral-400">You are not part of a family yet.</p>
+          ) : null}
+
+          <div className="space-y-3">
+            {families.map((fam) => (
+              <div
+                key={fam.id}
+                className="rounded-xl border border-neutral-700 bg-neutral-900/70 p-3 space-y-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-base font-semibold text-neutral-100">{fam.name}</div>
+                    <div className="text-xs text-neutral-500">
+                      Role: {fam.role || "member"} • Members: {fam.members.length}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => leaveFamily(fam.id)}
+                    disabled={familyBusy}
+                    className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-neutral-200 hover:border-red-500 hover:text-red-300 disabled:opacity-60"
+                  >
+                    Leave
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {fam.members.map((m) => (
+                    <span
+                      key={m.userId}
+                      className="inline-flex items-center rounded-lg border border-neutral-700 bg-neutral-800 px-2.5 py-1 text-xs text-neutral-100"
+                    >
+                      @{m.username}
+                      {m.preferredName ? <span className="ml-1 text-neutral-400">({m.preferredName})</span> : null}
+                      {m.role ? <span className="ml-1 text-[10px] uppercase text-neutral-500">{m.role}</span> : null}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Invite username"
+                      value={inviteInputs[fam.id] ?? ""}
+                      onChange={(e) => setInviteInputs((prev) => ({ ...prev, [fam.id]: e.target.value.toLowerCase() }))}
+                      className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-[var(--highlight-400)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => sendInvite(fam.id)}
+                      disabled={familyBusy}
+                      className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-semibold text-neutral-100 hover:border-[var(--highlight-400)] disabled:opacity-60"
+                    >
+                      Invite
+                    </button>
+                  </div>
+
+                  {canForceAdd && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Force add usernames (comma separated)"
+                        value={forceInputs[fam.id] ?? ""}
+                        onChange={(e) => setForceInputs((prev) => ({ ...prev, [fam.id]: e.target.value }))}
+                        className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-[var(--highlight-400)]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => forceAdd(fam.id)}
+                        disabled={familyBusy}
+                        className="rounded-lg border border-[var(--good-500)] bg-[var(--good-500)]/10 px-3 py-2 text-xs font-semibold text-[var(--good-100)] hover:border-[var(--good-400)] disabled:opacity-60"
+                      >
+                        Force
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {canForceAdd && overseenUsernames.length > 0 && (
+                  <p className="text-[11px] text-neutral-500">
+                    You can force add overseen users ({overseenUsernames.join(", ")}). Requires at least 5 overseen
+                    accounts.
+                  </p>
+                )}
+              </div>
+            ))}
           </div>
         </section>
 

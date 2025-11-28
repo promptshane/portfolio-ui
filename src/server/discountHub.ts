@@ -2,18 +2,42 @@ import prisma from "@/lib/prisma";
 import type { DiscountPositionDto } from "@/types/discount";
 import { fetchQuotes } from "@/app/lib/fmp";
 
-function toDto(row: any): DiscountPositionDto {
-  const art = row.article ?? {};
-  const asOf =
-    row.asOfDate?.toISOString?.() ??
-    art.datePublished?.toISOString?.() ??
-    art.summarizedAt?.toISOString?.() ??
-    art.uploadedAt?.toISOString?.() ??
-    row.createdAt.toISOString();
+type DiscountHistoryEntry = {
+  dto: DiscountPositionDto;
+  asOfMs: number;
+  createdMs: number;
+};
 
-  return {
+function resolveAsOf(row: any): { iso: string; ms: number; createdMs: number } {
+  const candidates = [
+    row.asOfDate,
+    row.article?.datePublished,
+    row.article?.summarizedAt,
+    row.article?.uploadedAt,
+    row.createdAt,
+  ];
+
+  for (const dt of candidates) {
+    const ts = dt?.getTime?.();
+    if (typeof ts === "number" && !Number.isNaN(ts)) {
+      const iso = new Date(ts).toISOString();
+      const createdMs = row?.createdAt?.getTime?.() ?? ts;
+      return { iso, ms: ts, createdMs };
+    }
+  }
+
+  const fallback = Date.now();
+  return { iso: new Date(fallback).toISOString(), ms: fallback, createdMs: fallback };
+}
+
+function toDto(row: any): DiscountHistoryEntry {
+  const art = row.article ?? {};
+  const { iso: asOf, ms: asOfMs, createdMs } = resolveAsOf(row);
+  const symbol = (row.symbol || "").toUpperCase();
+
+  const dto: DiscountPositionDto = {
     id: row.id,
-    symbol: row.symbol,
+    symbol,
     name: row.name ?? null,
     recommendation: row.recommendation ?? null,
     allocation: row.allocation ?? null,
@@ -38,6 +62,8 @@ function toDto(row: any): DiscountPositionDto {
         ? ((row.fairValue - row.currentPrice) / row.currentPrice) * 100
         : null,
   };
+
+  return { dto, asOfMs, createdMs };
 }
 
 type DiscountBuildResult = {
@@ -46,20 +72,39 @@ type DiscountBuildResult = {
 };
 
 function buildDiscountDtos(rows: any[]): DiscountBuildResult {
-  const historyMap = new Map<string, DiscountPositionDto[]>();
+  const historyMap = new Map<string, DiscountHistoryEntry[]>();
   for (const row of rows) {
-    const dto = toDto(row);
-    const key = dto.symbol.toUpperCase();
+    const entry = toDto(row);
+    const key = entry.dto.symbol?.toUpperCase?.() || "";
+    if (!key) continue;
     if (!historyMap.has(key)) historyMap.set(key, []);
-    historyMap.get(key)!.push(dto);
+    historyMap.get(key)!.push(entry);
   }
 
+  const sorter = (a: DiscountHistoryEntry, b: DiscountHistoryEntry) => {
+    const aKey = Number.isFinite(a.asOfMs) ? a.asOfMs : a.createdMs;
+    const bKey = Number.isFinite(b.asOfMs) ? b.asOfMs : b.createdMs;
+    if (bKey !== aKey) return bKey - aKey;
+    return (b.createdMs || 0) - (a.createdMs || 0);
+  };
+
   const latest = Array.from(historyMap.values())
-    .map((arr) => arr[0])
-    .sort((a, b) => new Date(b.asOf).getTime() - new Date(a.asOf).getTime());
+    .map((arr) => {
+      const sorted = [...arr].sort(sorter);
+      return sorted[0]?.dto;
+    })
+    .filter((dto): dto is DiscountPositionDto => !!dto)
+    .sort((a, b) => {
+      const aKey = Date.parse(a.asOf || a.createdAt);
+      const bKey = Date.parse(b.asOf || b.createdAt);
+      return (Number.isNaN(bKey) ? 0 : bKey) - (Number.isNaN(aKey) ? 0 : aKey);
+    });
 
   const history = Object.fromEntries(
-    Array.from(historyMap.entries()).map(([sym, arr]) => [sym, arr])
+    Array.from(historyMap.entries()).map(([sym, arr]) => [
+      sym,
+      [...arr].sort(sorter).map((e) => e.dto),
+    ])
   );
 
   return { latest, history };

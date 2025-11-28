@@ -213,6 +213,12 @@ export default function FTVDisplay({ result }: Props) {
   const pdfAsOf = parseDateSafe(latest?.ftvAsOf ?? latest?.confirmedAt ?? latest?.uploadedAt ?? null);
   const discountAsOf = parseDateSafe(discountLatest?.asOf ?? discountLatest?.createdAt ?? null);
   const discountHasFtv = discountLatest?.fairValue != null;
+  const latestPdfHref = latest?.filename
+    ? `/api/ftv/docs/view?symbol=${encodeURIComponent(sym)}`
+    : latest?.url || null;
+  const discountPdfHref = discountLatest?.articleId
+    ? `/api/news/articles/${encodeURIComponent(discountLatest.articleId)}/file`
+    : null;
 
   const preferDiscount =
     discountHasFtv &&
@@ -456,15 +462,26 @@ export default function FTVDisplay({ result }: Props) {
               )}
 
               <div className="flex items-center gap-2">
-                {latest?.url && (
+                {preferDiscount && discountPdfHref && (
                   <a
-                    href={latest.url}
+                    href={discountPdfHref}
                     target="_blank"
                     rel="noreferrer"
                     className="text-xs underline text-neutral-200 hover:text-white"
-                    title="View latest uploaded PDF"
+                    title="View the PDF that sourced the latest Discount Hub FTV"
                   >
-                    View latest PDF
+                    View PDF
+                  </a>
+                )}
+                {(!preferDiscount || (preferDiscount && latestPdfHref)) && latestPdfHref && (
+                  <a
+                    href={latestPdfHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs underline text-neutral-200 hover:text-white"
+                    title={preferDiscount ? "Open the most recent uploaded Morningstar PDF" : "View latest uploaded PDF"}
+                  >
+                    {preferDiscount ? "View Morningstar PDF" : "View PDF"}
                   </a>
                 )}
 

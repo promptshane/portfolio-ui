@@ -4,6 +4,9 @@ import prisma from "@/lib/prisma";
 let verifiedColumnEnsured = false;
 let ensurePromise: Promise<void> | null = null;
 
+const familyTablesReady = () =>
+  Boolean((prisma as any).familyMember?.findMany && (prisma as any).family?.findMany);
+
 async function ensureVerifiedEmailsColumn() {
   if (verifiedColumnEnsured) return;
   if (ensurePromise) {
@@ -89,4 +92,66 @@ export async function saveVerifiedEmailsForUser(userId: number, emails: string[]
     },
   });
   return normalized;
+}
+
+async function getFamilyMemberIds(userId: number): Promise<number[]> {
+  if (!familyTablesReady()) return [];
+  const memberships = await prisma.familyMember.findMany({
+    where: { userId },
+    select: {
+      family: {
+        select: {
+          members: { select: { userId: true } },
+        },
+      },
+    },
+  });
+  const ids = new Set<number>();
+  for (const m of memberships) {
+    for (const member of m.family.members) {
+      if (member.userId !== userId) {
+        ids.add(member.userId);
+      }
+    }
+  }
+  return Array.from(ids);
+}
+
+export async function getAggregatedVerifiedEmailsForUser(userId: number): Promise<{
+  own: string[];
+  family: string[];
+  combined: string[];
+}> {
+  const own = await getVerifiedEmailsForUser(userId);
+  const familyMemberIds = await getFamilyMemberIds(userId);
+  let family: string[] = [];
+  if (familyMemberIds.length && familyTablesReady()) {
+    try {
+      const rows = await prisma.user.findMany({
+        where: { id: { in: familyMemberIds } },
+        select: { verifiedEmailsJson: true },
+      });
+      const out = new Set<string>();
+      for (const row of rows) {
+        if (!row.verifiedEmailsJson) continue;
+        try {
+          const parsed = JSON.parse(row.verifiedEmailsJson);
+          if (!Array.isArray(parsed)) continue;
+          for (const entry of parsed) {
+            const normalized = typeof entry === "string" ? entry.trim().toLowerCase() : null;
+            if (normalized && normalized.includes("@")) {
+              out.add(normalized);
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      family = Array.from(out);
+    } catch {
+      family = [];
+    }
+  }
+  const combined = Array.from(new Set([...own, ...family]));
+  return { own, family, combined };
 }

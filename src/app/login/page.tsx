@@ -27,6 +27,7 @@ export default function LoginPage() {
   const [preferredName, setPreferredName] = useState("");
   const [phone, setPhone] = useState(""); // formatted for display
   const [confirm, setConfirm] = useState("");
+  const [devPassword, setDevPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -35,13 +36,15 @@ export default function LoginPage() {
   const phoneRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const confirmRef = useRef<HTMLInputElement>(null);
+  const devPasswordRef = useRef<HTMLInputElement>(null);
 
   const signupDisabled = useMemo(() => {
     if (!username.trim() || !password || !confirm) return true;
     if (password.length < 6) return true;
     if (password !== confirm) return true;
+    if (!devPassword.trim()) return true;
     return false;
-  }, [username, password, confirm]);
+  }, [username, password, confirm, devPassword]);
 
   async function doLogin() {
     const normalizedUsername = username.trim().toLowerCase();
@@ -79,6 +82,7 @@ export default function LoginPage() {
           phone: digitsOnly || undefined,
           password,
           confirm,
+          devPassword,
         }),
       });
       const j = await r.json().catch(() => ({}));
@@ -133,6 +137,10 @@ export default function LoginPage() {
       return void doSignup();
     }
     if (field === "confirm") {
+      if (devPasswordRef.current) return devPasswordRef.current.focus();
+      return void doSignup();
+    }
+    if (field === "devPassword") {
       return void doSignup();
     }
   };
@@ -239,6 +247,21 @@ export default function LoginPage() {
               {confirm && confirm !== password && (
                 <div className="text-xs text-red-400 mt-1">Passwords do not match</div>
               )}
+            </div>
+          )}
+
+          {mode === "signup" && (
+            <div>
+              <label className="block text-sm text-neutral-300 mb-1">Dev password</label>
+              <input
+                className="w-full px-3 py-2 rounded-lg bg-black/80 border border-neutral-700"
+                value={devPassword}
+                onChange={(e) => setDevPassword(e.target.value)}
+                onKeyDown={(e) => handleKeyDown(e, "devPassword")}
+                type="password"
+                placeholder="Required"
+                ref={devPasswordRef}
+              />
             </div>
           )}
 

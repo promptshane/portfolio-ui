@@ -48,6 +48,10 @@ model User {
   oversees      OverseerLink[] @relation("Overseer")
   overseenBy    OverseerLink[] @relation("Overseen")
   newsBatchJobs NewsBatchJob[]
+  familiesOwned Family[]       @relation("FamilyOwner")
+  familyMemberships FamilyMember[]
+  familyInvitesSent FamilyInvite[] @relation("FamilyInviteFrom")
+  familyInvitesReceived FamilyInvite[] @relation("FamilyInviteTo")
 }
 
 model Holding {
@@ -218,6 +222,51 @@ model NewsBatchJob {
   updatedAt  DateTime         @updatedAt
 
   @@index([userId, status, createdAt])
+}
+
+model Family {
+  id        Int       @id @default(autoincrement())
+  name      String
+  owner     User?     @relation("FamilyOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId   Int?
+  members   FamilyMember[]
+  invites   FamilyInvite[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model FamilyMember {
+  id        Int      @id @default(autoincrement())
+  family    Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  familyId  Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  role      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([familyId, userId])
+}
+
+model FamilyInvite {
+  id         Int                 @id @default(autoincrement())
+  family     Family              @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  familyId   Int
+  fromUser   User                @relation("FamilyInviteFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  fromUserId Int
+  toUser     User                @relation("FamilyInviteTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  toUserId   Int
+  status     FamilyInviteStatus  @default(pending)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  @@unique([familyId, toUserId])
+}
+
+enum FamilyInviteStatus {
+  pending
+  accepted
+  declined
 }
 
 enum ColorPalette {

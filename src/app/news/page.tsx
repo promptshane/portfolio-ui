@@ -65,19 +65,10 @@ export default function NewsPage() {
   const [refreshBusy, setRefreshBusy] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [subtitleOverride, setSubtitleOverride] = useState<string | null>(null);
+  const [databaseError, setDatabaseError] = useState<string | null>(null);
 
   const actionButtonClass =
     "inline-flex items-center rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-sm font-medium text-neutral-100 hover:border-[var(--highlight-400)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--highlight-400)]";
-
-  const databaseButton = (
-    <button
-      type="button"
-      onClick={() => router.push("/news/database")}
-      className={actionButtonClass}
-    >
-      Database
-    </button>
-  );
 
   const [processingStep, setProcessingStep] = useState(0);
   const loadingActive = refreshBusy || jobRunning;
@@ -174,6 +165,26 @@ export default function NewsPage() {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [sortOpen]);
+
+  const handleDatabaseAccess = async () => {
+    setDatabaseError(null);
+    const password = window.prompt("Enter dev password to view the Database:");
+    if (!password) return;
+    try {
+      const res = await fetch("/api/ftv/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Unauthorized");
+      router.push("/news/database");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Access denied";
+      setDatabaseError(msg);
+      window.alert(msg);
+    }
+  };
 
   function getDefaultQaState(): QaUIState {
     return {
@@ -848,7 +859,6 @@ export default function NewsPage() {
       <Header
         title="News"
         subtitle={subtitleOverride ?? subtitleDefault}
-        leftSlot={databaseButton}
         rightSlot={
           <div className="flex items-start gap-2">
             {/* Refresh button + status */}
@@ -994,14 +1004,23 @@ export default function NewsPage() {
                       </label>
                     </div>
                   </div>
-                  <div className="mt-3 border-t border-neutral-800 pt-2 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setSortOpen(false)}
-                      className="rounded-lg border border-neutral-600 px-3 py-1 text-[11px] text-neutral-200 hover:border-white"
-                    >
-                      Close
-                    </button>
+                  <div className="mt-3 border-t border-neutral-800 pt-2">
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={handleDatabaseAccess}
+                        className="text-[11px] underline text-neutral-300 hover:text-white"
+                      >
+                        View Database
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSortOpen(false)}
+                        className="rounded-lg border border-neutral-600 px-3 py-1 text-[11px] text-neutral-200 hover:border-white"
+                      >
+                        Close
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1013,6 +1032,11 @@ export default function NewsPage() {
       {error && (
         <div className="mb-4 rounded-xl border border-red-600/60 bg-red-900/30 px-4 py-3 text-sm text-red-100">
           {error}
+        </div>
+      )}
+      {databaseError && (
+        <div className="mb-3 rounded-lg border border-red-600/60 bg-red-900/30 px-3 py-2 text-xs text-red-100">
+          {databaseError}
         </div>
       )}
 

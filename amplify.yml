@@ -12,7 +12,7 @@ frontend:
       commands:
         # Persist critical server-only envs into .env.production so middleware/NextAuth/server routes get inlined values
         - rm -f .env.production
-        - env | grep -E '^(NEXTAUTH_SECRET|AUTH_SECRET|DATABASE_URL|POSTGRES_URL|NEXTAUTH_URL|FMP_API_KEY|OPENAI_API_KEY|FTV_DEV_PASSWORD|S3_ACCESS_KEY_ID|S3_SECRET_ACCESS_KEY|S3_BUCKET|S3_REGION|NEXT_PUBLIC_FMP_API_KEY|GMAIL_CREDENTIALS_JSON|GMAIL_TOKEN_JSON)=' >> .env.production || true
+        - env | grep -E '^(NEXTAUTH_SECRET|AUTH_SECRET|DATABASE_URL|POSTGRES_URL|NEXTAUTH_URL|FMP_API_KEY|OPENAI_API_KEY|FTV_DEV_PASSWORD|DEV_SIGNUP_PASSWORD|S3_ACCESS_KEY_ID|S3_SECRET_ACCESS_KEY|S3_BUCKET|S3_REGION|NEXT_PUBLIC_FMP_API_KEY|GMAIL_CREDENTIALS_JSON|GMAIL_TOKEN_JSON)=' >> .env.production || true
         - npm run build
         - npx prisma migrate deploy
         # drop caches and sourcemaps to keep artifact under Amplify size limits

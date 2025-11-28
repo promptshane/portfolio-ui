@@ -38,6 +38,7 @@ export default function WatchlistPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [draft, setDraft] = useState<Item[]>([]);
   const [newSym, setNewSym] = useState("");
+  const [sortMode, setSortMode] = useState<"ticker" | "buy" | "sell">("ticker");
 
   // Load watchlist
   useEffect(() => {
@@ -185,24 +186,79 @@ export default function WatchlistPage() {
     });
   }, [symbols, quotes, scores]);
 
+  const sortedRows = useMemo(() => {
+    const weight = (v: number | null | undefined, factor: number) =>
+      Number.isFinite(v ?? null) ? (v as number) * factor : 0;
+    const composite = (r: Row) =>
+      weight(r.fin, 0.5) + weight(r.fair, 0.3) + weight(r.mom, 0.2);
+
+    const copy = [...rows];
+    if (sortMode === "ticker") {
+      copy.sort((a, b) => a.sym.localeCompare(b.sym));
+    } else if (sortMode === "buy") {
+      copy.sort((a, b) => composite(b) - composite(a));
+    } else if (sortMode === "sell") {
+      copy.sort((a, b) => composite(a) - composite(b));
+    }
+    return copy;
+  }, [rows, sortMode]);
+
   const symbolsLoaded = useMemo(
     () => symbols.filter((s) => scores[s] !== undefined).length,
     [scores, symbols]
   );
+  const [loadingDots, setLoadingDots] = useState(".");
+  useEffect(() => {
+    if (!(quotesLoading || symbolsLoaded < symbols.length) || symbols.length === 0) return;
+    let dots = ".";
+    const id = window.setInterval(() => {
+      dots = dots.length >= 3 ? "." : `${dots}.`;
+      setLoadingDots(dots);
+    }, 450);
+    return () => window.clearInterval(id);
+  }, [quotesLoading, symbolsLoaded, symbols.length]);
   const tickerStatusText =
     symbols.length === 0
       ? null
       : quotesLoading || symbolsLoaded < symbols.length
-      ? "Loading…"
+      ? `Loading${loadingDots}`
       : `${symbolsLoaded} Tickers Loaded`;
 
   return (
     <main className="min-h-screen bg-neutral-900 text-white px-6 py-8">
       <Header
         title="Watchlist"
-        onRightButtonClick={toggleEdit}
-        rightButtonLabel={edit ? "Save" : "Edit"}
-        rightActive={edit}
+        subtitle={tickerStatusText || undefined}
+        rightSlot={
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                type="button"
+                className="px-3 py-2 rounded-lg border border-neutral-700 bg-neutral-800 text-sm font-medium text-neutral-100 hover:border-[var(--highlight-400)]"
+                onClick={() =>
+                  setSortMode((prev) =>
+                    prev === "ticker" ? "buy" : prev === "buy" ? "sell" : "ticker"
+                  )
+                }
+                title="Toggle sort"
+              >
+                Sort: {sortMode === "ticker" ? "Ticker" : sortMode === "buy" ? "Buys" : "Sells"}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={toggleEdit}
+              className={`px-3 py-2 rounded-lg border ${
+                edit
+                  ? "bg-[var(--good-500)] border-[var(--good-500)] hover:brightness-110"
+                  : "bg-black/90 border-neutral-700 hover:border-neutral-600"
+              }`}
+              aria-pressed={edit}
+            >
+              {edit ? "Save" : "Edit"}
+            </button>
+          </div>
+        }
       />
 
       {notice && (
@@ -214,12 +270,6 @@ export default function WatchlistPage() {
           }}
         >
           {notice}
-      </div>
-      )}
-
-      {tickerStatusText && (
-        <div className="mb-4 rounded-2xl border border-neutral-800 bg-neutral-825 p-4 text-sm text-neutral-300">
-          {tickerStatusText}
         </div>
       )}
 
@@ -246,7 +296,7 @@ export default function WatchlistPage() {
       {/* rows */}
       {!edit && (
         <div className="space-y-3">
-          {rows.map((r) => (
+          {sortedRows.map((r) => (
             <div
               key={r.sym}
               className="grid grid-cols-12 items-center bg-neutral-825 rounded-2xl py-3 px-4 border border-neutral-800"
@@ -327,6 +377,15 @@ export default function WatchlistPage() {
                 placeholder="Ticker (e.g., AAPL)"
                 value={newSym}
                 onChange={(e) => setNewSym(e.target.value.toUpperCase())}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const sym = newSym.toUpperCase().trim();
+                    if (!sym) return;
+                    setDraft((prev) => (prev.find((x) => x.sym === sym) ? prev : [...prev, { sym }]));
+                    setNewSym("");
+                  }
+                }}
               />
             </div>
             <div className="col-span-4 flex justify-end">

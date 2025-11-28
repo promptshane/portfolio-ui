@@ -208,6 +208,13 @@ export default function DiscountHubPage() {
     setRefreshNonce((n) => n + 1);
   };
 
+  const handleOpenArticle = (articleId?: string) => {
+    const id = (articleId || "").trim();
+    if (!id) return;
+    const url = `/api/news/articles/${encodeURIComponent(id)}/file`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   const hydratedLatest = useMemo(() => {
     if (!latest.length) return latest;
     return latest.map((item) => {
@@ -507,9 +514,20 @@ export default function DiscountHubPage() {
                   )}
 
                   <div className="mt-3 text-[11px] text-neutral-400 flex items-center justify-between">
-                    <span>
-                      Source: {item.articleTitle ? item.articleTitle : "Newsletter"} •{" "}
-                      {fmtDate(item.articleDate) || "N/A"}
+                    <span className="inline-flex items-center gap-2">
+                      <span>
+                        Source: {item.articleTitle ? item.articleTitle : "Newsletter"} •{" "}
+                        {fmtDate(item.articleDate) || "N/A"}
+                      </span>
+                      {item.articleId && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenArticle(item.articleId)}
+                          className="text-[11px] underline text-neutral-300 hover:text-white"
+                        >
+                          View
+                        </button>
+                      )}
                     </span>
                     {hasOlder && (
                       <details className="ml-2">

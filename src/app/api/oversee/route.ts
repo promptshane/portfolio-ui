@@ -3,13 +3,14 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { compare, hash } from "bcryptjs";
+import { validateDevPassword } from "@/server/devPassword";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type OverseerAction =
   | { action: "link"; username: string; password: string }
-  | { action: "create"; username: string; password: string; preferredName?: string };
+  | { action: "create"; username: string; password: string; preferredName?: string; devPassword?: string };
 
 type OverseenRow = {
   id: number;
@@ -129,11 +130,16 @@ export async function POST(req: NextRequest) {
     if (body.action === "create") {
       const rawUsername = normalizeUsername(body.username || "");
       const password = body.password || "";
+      const devCheck = validateDevPassword(body.devPassword);
       if (!rawUsername || password.length < 6) {
         return NextResponse.json(
           { error: "Username and password (min 6 chars) are required" },
           { status: 400 }
         );
+      }
+      if (!devCheck.ok) {
+        const status = devCheck.error?.includes("not configured") ? 500 : 401;
+        return NextResponse.json({ error: devCheck.error }, { status });
       }
 
       const existing = await prisma.user.findFirst({

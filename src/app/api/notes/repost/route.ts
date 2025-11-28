@@ -197,3 +197,24 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const userId = await getCurrentUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const body = await req.json().catch(() => null);
+    const articleId = String(body?.articleId ?? "").trim();
+    if (!articleId) {
+      return NextResponse.json({ error: "articleId is required" }, { status: 400 });
+    }
+    await prisma.notesRepost.deleteMany({
+      where: { userId, articleId },
+    });
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /api/notes/repost] error:", err);
+    return NextResponse.json({ error: "Failed to delete repost" }, { status: 500 });
+  }
+}

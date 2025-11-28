@@ -7,7 +7,7 @@ import type {
 import prisma from "@/lib/prisma";
 import { generateAndStoreSummary } from "./summarizer";
 import { ingestEmailsFromGmail } from "./emailIngest";
-import { getVerifiedEmailsForUser } from "../user/preferences";
+import { getAggregatedVerifiedEmailsForUser } from "../user/preferences";
 
 const SUMMARY_CONCURRENCY = Math.max(
   Number(process.env.NEWS_SUMMARY_CONCURRENCY) || 3,
@@ -299,7 +299,7 @@ export async function enqueueRefreshJob(options: {
   replaceExisting?: boolean;
 }) {
   await ensureNoActiveJob(options.userId, options.replaceExisting ?? false);
-  const senders = await getVerifiedEmailsForUser(options.userId);
+  const { combined: senders } = await getAggregatedVerifiedEmailsForUser(options.userId);
   if (!senders.length) {
     throw new Error("Add at least one verified sender email in Settings before refreshing.");
   }

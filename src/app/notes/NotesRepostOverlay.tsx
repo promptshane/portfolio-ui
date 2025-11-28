@@ -20,6 +20,7 @@ type NotesRepostOverlayProps = {
   onToggleTicker: (ticker: string) => void;
   onChangeComment: (value: string) => void;
   onSubmit: () => void;
+  onDelete?: () => void;
 };
 
 export default function NotesRepostOverlay({
@@ -28,6 +29,7 @@ export default function NotesRepostOverlay({
   onToggleTicker,
   onChangeComment,
   onSubmit,
+  onDelete,
 }: NotesRepostOverlayProps) {
   return (
     <div className="fixed inset-0 z-30 flex items-end md:items-center justify-center bg-black/60 px-4 py-6">
@@ -152,6 +154,16 @@ export default function NotesRepostOverlay({
               ? "Update repost"
               : "Repost"}
           </button>
+          {draft.mode === "edit" && onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={draft.submitting}
+              className="inline-flex items-center rounded-lg border border-red-500 bg-red-900/30 px-3 py-1.5 text-xs font-semibold text-red-100 hover:border-red-400 disabled:opacity-60"
+            >
+              Delete repost
+            </button>
+          )}
         </div>
       </div>
     </div>

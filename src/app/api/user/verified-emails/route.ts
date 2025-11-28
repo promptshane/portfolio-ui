@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import {
-  getVerifiedEmailsForUser,
+  getAggregatedVerifiedEmailsForUser,
   parseEmailList,
   saveVerifiedEmailsForUser,
 } from "@/server/user/preferences";
@@ -24,8 +24,8 @@ export async function GET() {
   const uid = getUserId(session);
   if (!uid) return NextResponse.json({ emails: [] }, { status: 200 });
 
-  const emails = await getVerifiedEmailsForUser(uid);
-  return NextResponse.json({ emails });
+  const { own, family, combined } = await getAggregatedVerifiedEmailsForUser(uid);
+  return NextResponse.json({ emails: own, familyEmails: family, combined });
 }
 
 export async function POST(req: NextRequest) {
@@ -44,5 +44,6 @@ export async function POST(req: NextRequest) {
   const emails = parseEmailList(rawList);
 
   const saved = await saveVerifiedEmailsForUser(uid, emails);
-  return NextResponse.json({ emails: saved });
+  const aggregated = await getAggregatedVerifiedEmailsForUser(uid);
+  return NextResponse.json({ emails: saved, familyEmails: aggregated.family, combined: aggregated.combined });
 }

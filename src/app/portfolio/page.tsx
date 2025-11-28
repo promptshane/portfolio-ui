@@ -457,11 +457,21 @@ export default function PortfolioPage() {
     () => symbols.filter((s) => scores[s] !== undefined).length,
     [scores, symbols]
   );
+  const [loadingDots, setLoadingDots] = useState(".");
+  useEffect(() => {
+    if (!(quotesLoading || symbolsLoaded < symbols.length) || symbols.length === 0) return;
+    let dots = ".";
+    const id = setInterval(() => {
+      dots = dots.length >= 3 ? "." : `${dots}.`;
+      setLoadingDots(dots);
+    }, 450);
+    return () => clearInterval(id);
+  }, [quotesLoading, symbolsLoaded, symbols.length]);
   const tickerStatusText =
     symbols.length === 0
       ? null
       : quotesLoading || symbolsLoaded < symbols.length
-      ? "Loading…"
+      ? `Loading${loadingDots}`
       : `${symbolsLoaded} Tickers Loaded`;
 
   // Save holdings
@@ -515,6 +525,7 @@ export default function PortfolioPage() {
     <main className="min-h-screen bg-neutral-900 text-white px-6 py-8">
       <Header
         title="Portfolio"
+        subtitle={tickerStatusText || undefined}
         rightSlot={
           canEdit ? (
             <button
@@ -545,12 +556,6 @@ export default function PortfolioPage() {
           }}
         >
           {notice}
-        </div>
-      )}
-
-      {tickerStatusText && (
-        <div className="mb-4 rounded-2xl border border-neutral-800 bg-neutral-825 p-4 text-sm text-neutral-300">
-          {tickerStatusText}
         </div>
       )}
 

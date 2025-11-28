@@ -299,6 +299,7 @@ export default function SettingsPage() {
   const [createPreferredName, setCreatePreferredName] = useState("");
   const [createPassword, setCreatePassword] = useState("");
   const [createConfirm, setCreateConfirm] = useState("");
+  const [createDevPassword, setCreateDevPassword] = useState("");
   const [createBusy, setCreateBusy] = useState(false);
   const [createMsg, setCreateMsg] = useState<string | null>(null);
   const [linkExpanded, setLinkExpanded] = useState(false);
@@ -318,6 +319,7 @@ export default function SettingsPage() {
     setCreatePreferredName("");
     setCreatePassword("");
     setCreateConfirm("");
+    setCreateDevPassword("");
   }, []);
 
   const refreshOversee = useCallback(async () => {
@@ -394,6 +396,10 @@ export default function SettingsPage() {
       setCreateMsg("Passwords must match.");
       return;
     }
+    if (!createDevPassword.trim()) {
+      setCreateMsg("Dev password is required.");
+      return;
+    }
     setCreateBusy(true);
     setCreateMsg(null);
     try {
@@ -406,6 +412,7 @@ export default function SettingsPage() {
           username: normalizedUsername,
           preferredName: createPreferredName,
           password: createPassword,
+          devPassword: createDevPassword,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -417,6 +424,7 @@ export default function SettingsPage() {
       setCreatePreferredName("");
       setCreatePassword("");
       setCreateConfirm("");
+      setCreateDevPassword("");
       await refreshOversee();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to create account.";
@@ -446,6 +454,7 @@ export default function SettingsPage() {
   const [themeMsg, setThemeMsg] = useState<null | { ok: boolean; text: string }>(null);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [verifiedEmailsInput, setVerifiedEmailsInput] = useState("");
+  const [familyVerifiedEmails, setFamilyVerifiedEmails] = useState<string[]>([]);
   const [verifiedEmailsBusy, setVerifiedEmailsBusy] = useState(false);
   const [verifiedEmailsMsg, setVerifiedEmailsMsg] = useState<string | null>(null);
 
@@ -470,10 +479,12 @@ export default function SettingsPage() {
           credentials: "include",
         });
         if (!res.ok || !active) return;
-        const data = (await res.json()) as { emails?: string[] };
+        const data = (await res.json()) as { emails?: string[]; familyEmails?: string[]; combined?: string[] };
         if (!active) return;
         const emails = Array.isArray(data?.emails) ? data.emails : [];
+        const fam = Array.isArray(data?.familyEmails) ? data.familyEmails : [];
         setVerifiedEmailsInput(emails.join("\n"));
+        setFamilyVerifiedEmails(fam);
       } catch {
         /* ignore */
       }
@@ -508,6 +519,8 @@ export default function SettingsPage() {
       }
       const saved = Array.isArray(data?.emails) ? data.emails : emails;
       setVerifiedEmailsInput(saved.join("\n"));
+      const fam = Array.isArray(data?.familyEmails) ? data.familyEmails : familyVerifiedEmails;
+      setFamilyVerifiedEmails(fam);
       setVerifiedEmailsMsg("Saved.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not save.";
@@ -758,8 +771,7 @@ export default function SettingsPage() {
           <section className={card}>
             <h2 className="text-lg font-semibold mb-2">Verified sender emails</h2>
             <p className="text-sm text-neutral-400 mb-4">
-              Save the newsletter or alert addresses you trust. We’ll automatically use them when loading
-              or refreshing articles in the Database and News pages.
+              Save the newsletter or alert addresses you trust. Family members share their verified senders with you automatically.
             </p>
             <textarea
               value={verifiedEmailsInput}
@@ -782,6 +794,24 @@ export default function SettingsPage() {
                 <span className="text-sm text-neutral-300">{verifiedEmailsMsg}</span>
               ) : null}
             </div>
+            {familyVerifiedEmails.length > 0 && (
+              <div className="mt-4 rounded-xl border border-neutral-700 bg-neutral-900/50 p-3 text-sm text-neutral-200">
+                <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Family verified emails</div>
+                <div className="flex flex-wrap gap-2">
+                  {familyVerifiedEmails.map((email) => (
+                    <span
+                      key={email}
+                      className="inline-flex items-center rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-100"
+                    >
+                      {email}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-[11px] text-neutral-500 mt-2">
+                  These come from family members and are used alongside your own when fetching emails.
+                </p>
+              </div>
+            )}
           </section>
 
           {/* ---- Oversee ---- */}
@@ -956,6 +986,14 @@ export default function SettingsPage() {
                       value={createConfirm}
                       onChange={(e) => setCreateConfirm(e.target.value)}
                       placeholder="Confirm password"
+                      className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-[var(--highlight-400)]"
+                      disabled={createBusy}
+                    />
+                    <input
+                      type="password"
+                      value={createDevPassword}
+                      onChange={(e) => setCreateDevPassword(e.target.value)}
+                      placeholder="Dev password"
                       className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-[var(--highlight-400)]"
                       disabled={createBusy}
                     />

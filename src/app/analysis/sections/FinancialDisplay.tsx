@@ -434,6 +434,28 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
         </svg>
       </div>
 
+      {/* Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <FSCard
+          selected={activeFS === "is"}
+          onClick={() => setActiveFS("is")}
+          block={result.details.is}
+          score={statementScore("is")}
+        />
+        <FSCard
+          selected={activeFS === "bs"}
+          onClick={() => setActiveFS("bs")}
+          block={result.details.bs}
+          score={statementScore("bs")}
+        />
+        <FSCard
+          selected={activeFS === "cfs"}
+          onClick={() => setActiveFS("cfs")}
+          block={result.details.cfs}
+          score={statementScore("cfs")}
+        />
+      </div>
+
       {/* Key Financial Ratios */}
       <div className="bg-neutral-800 rounded-2xl p-4 border border-neutral-700">
         <button
@@ -478,28 +500,6 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
             )}
           </div>
         )}
-      </div>
-
-      {/* Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <FSCard
-          selected={activeFS === "is"}
-          onClick={() => setActiveFS("is")}
-          block={result.details.is}
-          score={statementScore("is")}
-        />
-        <FSCard
-          selected={activeFS === "bs"}
-          onClick={() => setActiveFS("bs")}
-          block={result.details.bs}
-          score={statementScore("bs")}
-        />
-        <FSCard
-          selected={activeFS === "cfs"}
-          onClick={() => setActiveFS("cfs")}
-          block={result.details.cfs}
-          score={statementScore("cfs")}
-        />
       </div>
     </>
   );

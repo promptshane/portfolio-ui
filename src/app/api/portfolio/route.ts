@@ -110,6 +110,15 @@ export async function POST(req: NextRequest) {
         update: { shares: h.shares, avgCost: h.avgCost },
       });
     }
+
+    // Ensure portfolio tickers are reflected on the watchlist (without removing existing entries).
+    for (const sym of symbols) {
+      await tx.watchlistItem.upsert({
+        where: { userId_symbol: { userId: targetId, symbol: sym } },
+        create: { userId: targetId, symbol: sym },
+        update: {},
+      });
+    }
   });
 
   const rows = await prisma.holding.findMany({

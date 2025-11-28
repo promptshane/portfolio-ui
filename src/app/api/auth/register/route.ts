@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { hash } from "bcryptjs";
 import { Prisma } from "@prisma/client";
+import { validateDevPassword } from "@/server/devPassword";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,7 @@ export const runtime = "nodejs";
  *  - phone (optional; digits only are fine)
  *  - password (required, >= 6)
  *  - confirm  (required; must match password)
+ *  - devPassword (required; must match server env)
  *
  * This handler adapts to your current Prisma schema:
  * - If User.phone does not exist, we omit it automatically.
@@ -29,6 +31,7 @@ export async function POST(req: NextRequest) {
     const phoneDigits = String(body?.phone || "").replace(/\D/g, ""); // store digits only
     const password = String(body?.password || "");
     const confirm = String(body?.confirm || "");
+    const devPassword = body?.devPassword ? String(body.devPassword) : "";
 
     if (!rawUsername || !password || !confirm) {
       return NextResponse.json(
@@ -47,6 +50,11 @@ export async function POST(req: NextRequest) {
         { error: "Passwords do not match" },
         { status: 400 }
       );
+    }
+    const devCheck = validateDevPassword(devPassword);
+    if (!devCheck.ok) {
+      const status = devCheck.error?.includes("not configured") ? 500 : 401;
+      return NextResponse.json({ error: devCheck.error }, { status });
     }
 
     // Prevent duplicate username (case-insensitive, since we store lowercase)
