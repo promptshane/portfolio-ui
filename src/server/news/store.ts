@@ -203,10 +203,12 @@ export type SummaryPayload = {
   datePublished?: string | Date | null;
   summaryText?: string | null;
   keyPoints?: string[] | null;
-  actions?: string[] | null;
+  actions?: unknown[] | null;
   // keep generic so we can store richer ticker objects if needed
   tickers?: unknown[] | null;
   positions?: unknown[] | null;
+  ongoingActions?: unknown[] | null;
+  ongoingTickers?: unknown[] | null;
 };
 
 export async function saveSummary(
@@ -219,6 +221,22 @@ export async function saveSummary(
       : payload.datePublished
       ? new Date(payload.datePublished)
       : null;
+
+  const buildDiscountPayload = () => {
+    const discountPayload: {
+      positions?: unknown[];
+      ongoing_actions?: unknown[];
+      ongoing_tickers?: unknown[];
+    } = {};
+
+    if (payload.positions?.length) discountPayload.positions = payload.positions;
+    if (payload.ongoingActions?.length)
+      discountPayload.ongoing_actions = payload.ongoingActions as unknown[];
+    if (payload.ongoingTickers?.length)
+      discountPayload.ongoing_tickers = payload.ongoingTickers as unknown[];
+
+    return Object.keys(discountPayload).length ? discountPayload : null;
+  };
 
   const article = await prisma.newsArticle.update({
     where: { id },
@@ -233,7 +251,10 @@ export async function saveSummary(
         : null,
       actionsJson: payload.actions ? JSON.stringify(payload.actions) : null,
       tickersJson: payload.tickers ? JSON.stringify(payload.tickers) : null,
-      discountJson: payload.positions ? JSON.stringify(payload.positions) : null,
+      discountJson: (() => {
+        const discountPayload = buildDiscountPayload();
+        return discountPayload ? JSON.stringify(discountPayload) : null;
+      })(),
       summarizedAt: new Date(),
     },
   });

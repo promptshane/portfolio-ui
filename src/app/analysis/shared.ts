@@ -24,6 +24,21 @@ export type IndicKey = "band" | "rsi" | "macd";
 export type RangeKey = "1D" | "1W" | "1M" | "3M" | "6M" | "YTD" | "1Y" | "2Y" | "5Y";
 export type FSKind = "is" | "bs" | "cfs";
 
+export type CompanyProfile = {
+  description?: string;
+  sector?: string;
+  industry?: string;
+  website?: string;
+  ceo?: string;
+  employees?: number | null;
+  city?: string;
+  state?: string;
+  country?: string;
+  address?: string;
+  exchange?: string;
+  ipoDate?: string;
+};
+
 export type KeyStats = {
   marketCap?: number | null;
   peRatio?: number | null;
@@ -80,6 +95,7 @@ export type EvalResult = {
   dataSource?: "real" | "mock";
   strength: number;
   stability: number;
+  companyProfile?: CompanyProfile;
   keyStats?: KeyStats;
   series: {
     price: number[];

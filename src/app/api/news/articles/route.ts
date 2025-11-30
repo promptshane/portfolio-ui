@@ -127,6 +127,7 @@ export async function GET() {
         keyPointsJson: a.keyPointsJson,
         actionsJson: a.actionsJson,
         tickersJson: a.tickersJson,
+        discountJson: a.discountJson,
         summarizedAt: a.summarizedAt
           ? a.summarizedAt.toISOString()
           : null,

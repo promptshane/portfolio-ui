@@ -10,6 +10,15 @@ type EsgRecord = {
   rating?: string;
   date?: string;
   publishingDate?: string;
+  // stable disclosures fields
+  ESGScore?: number;
+  EnvironmentScore?: number;
+  SocialScore?: number;
+  GovernanceScore?: number;
+  symbol?: string;
+  cik?: string;
+  year?: number;
+  period?: string;
 };
 
 function parseEsgCategory(score: number): string {
@@ -32,13 +41,17 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // Prefer stable disclosures endpoint (Starter access), then fallback to stable ESG data, then v4.
     const endpoints = [
+      `https://financialmodelingprep.com/stable/esg-disclosures?symbol=${encodeURIComponent(
+        symbol
+      )}&limit=1&apikey=${key}`,
+      `https://financialmodelingprep.com/stable/esg-environmental-social-governance-data?symbol=${encodeURIComponent(
+        symbol
+      )}&limit=1&apikey=${key}`,
       `https://financialmodelingprep.com/api/v4/esg-environmental-social-governance-data?symbol=${encodeURIComponent(
         symbol
       )}&limit=1&apikey=${key}`,
-      `https://financialmodelingprep.com/api/v3/esg-environmental-social-governance-data/${encodeURIComponent(
-        symbol
-      )}?limit=1&apikey=${key}`,
     ];
 
     let data: any = null;
@@ -70,6 +83,7 @@ export async function GET(req: NextRequest) {
       rec.totalEsg ??
       rec.esgScore ??
       rec.esgRiskScore ??
+      rec.ESGScore ??
       rec.riskScore ??
       null;
 

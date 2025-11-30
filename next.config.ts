@@ -19,6 +19,7 @@ const nextConfig: NextConfig = {
   },
   // Ensure native/binary deps are included in traced output for server/app routes
   serverExternalPackages: ["@prisma/client", "bcryptjs", "@aws-sdk/client-s3"],
+  transpilePackages: ["react-pdf", "pdfjs-dist"],
   experimental: {
     serverSourceMaps: false,
   },

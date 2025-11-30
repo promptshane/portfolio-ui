@@ -1,7 +1,7 @@
 // src/app/news/NewsArticleCard.tsx
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import type { NewsItem, QaUIState } from "./types";
 import { formatDateTime, decorateTextWithTickers } from "./utils";
 
@@ -40,7 +40,12 @@ export default function NewsArticleCard({
   onDownload,
   onOpenRepost,
 }: NewsArticleCardProps) {
+  const [showOngoing, setShowOngoing] = useState(false);
   const qaOpen = qaState.open;
+
+  useEffect(() => {
+    setShowOngoing(false);
+  }, [item.id]);
 
   const totalEntries = qaState.entries.length;
   const displayedEntries =
@@ -109,6 +114,13 @@ export default function NewsArticleCard({
   const eyeButtonClasses = isPdfFile
     ? "inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--highlight-400)] bg-[var(--highlight-500)]/10 text-sm font-semibold text-white hover:border-[var(--highlight-300)] hover:bg-[var(--highlight-500)]/20 hover:text-white transition-[border-color,background-color,color,box-shadow]"
     : "inline-flex h-9 w-9 items-center justify-center rounded-full border border-neutral-500 bg-transparent text-sm font-semibold text-neutral-200 hover:border-[var(--highlight-400)] hover:text-white transition-[border-color,background-color,color,box-shadow]";
+
+  const baseTickers = item.tickers ?? [];
+  const ongoingActions = item.ongoingActions ?? [];
+  const ongoingTickers = item.ongoingTickers ?? [];
+  const displayTickers = showOngoing
+    ? Array.from(new Set([...(baseTickers || []), ...(ongoingTickers || [])]))
+    : baseTickers;
 
   return (
     <div
@@ -191,11 +203,25 @@ export default function NewsArticleCard({
             )}
 
             {/* Actions */}
-            {item.actions.length > 0 && (
-              <section className="space-y-2">
+            <section className="space-y-2">
+              <div className="flex items-center gap-2">
                 <h3 className="text-xs uppercase tracking-wide text-neutral-400">
                   Actions to take
                 </h3>
+                {ongoingActions.length > 0 && (
+                  <button
+                    type="button"
+                    aria-label={showOngoing ? "Hide continued actions" : "Show continued actions"}
+                    onClick={() => setShowOngoing((prev) => !prev)}
+                    className="text-neutral-300 hover:text-neutral-100 transition-colors"
+                  >
+                    <span className="text-sm leading-none">
+                      {showOngoing ? "▾" : "▸"}
+                    </span>
+                  </button>
+                )}
+              </div>
+              {item.actions.length > 0 ? (
                 <ul className="list-disc pl-5 space-y-1.5 text-neutral-300">
                   {item.actions.map((act, i) => (
                     <li key={i}>
@@ -206,17 +232,31 @@ export default function NewsArticleCard({
                     </li>
                   ))}
                 </ul>
-              </section>
-            )}
+              ) : (
+                <p className="text-sm text-neutral-500 italic">No actions to take.</p>
+              )}
+              {showOngoing && ongoingActions.length > 0 && (
+                <div className="space-y-1 pt-1">
+                  <h4 className="text-xs uppercase tracking-wide text-neutral-400">
+                    Continued actions
+                  </h4>
+                  <ul className="list-disc pl-5 space-y-1.5 text-neutral-300">
+                    {ongoingActions.map((act, i) => (
+                      <li key={`ongoing-${i}`}>{act}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
 
             {/* Tickers row + controls */}
             <section className="space-y-2">
               <h3 className="text-xs uppercase tracking-wide text-neutral-400">
-                Tickers
+                {showOngoing ? "Tickers (summary/new + continued)" : "Tickers"}
               </h3>
               <div className="flex items-center justify-between gap-3">
                 <div className="flex flex-wrap gap-2 flex-1">
-                  {item.tickers.map((t) => {
+                  {displayTickers.map((t) => {
                     const upper = t.trim().toUpperCase();
                     const isPortfolioTicker =
                       portfolioTickerSet.has(upper);
@@ -244,7 +284,7 @@ export default function NewsArticleCard({
                       </button>
                     );
                   })}
-                  {item.tickers.length === 0 && (
+                  {displayTickers.length === 0 && (
                     <p className="text-sm text-neutral-500 italic">
                       No tickers mentioned.
                     </p>

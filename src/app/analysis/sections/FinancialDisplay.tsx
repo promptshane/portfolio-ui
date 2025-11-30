@@ -74,6 +74,7 @@ const RATIO_LABELS: Record<string, string> = {
   netProfitMargin: "Net Profit Margin",
   returnOnEquity: "ROE",
   returnOnAssets: "ROA",
+  returnOnInvestedCapital: "ROIC",
   returnOnCapitalEmployed: "ROCE",
   currentRatio: "Current Ratio",
   quickRatio: "Quick Ratio",
@@ -82,6 +83,7 @@ const RATIO_LABELS: Record<string, string> = {
   debtRatio: "Debt Ratio",
   interestCoverage: "Interest Coverage",
   cashFlowToDebtRatio: "CF to Debt",
+  netDebtToEbitda: "Net Debt / EBITDA",
   assetTurnover: "Asset Turnover",
   inventoryTurnover: "Inventory Turnover",
   receivablesTurnover: "Receivables Turnover",
@@ -89,20 +91,45 @@ const RATIO_LABELS: Record<string, string> = {
   daysOfInventoryOutstanding: "Days Inventory Outstanding",
   daysOfPayablesOutstanding: "Days Payables Outstanding",
   cashConversionCycle: "Cash Conversion Cycle",
-  operatingCashFlowSalesRatio: "OCF / Sales",
+  operatingCashFlowSalesRatio: "CFO margin",
+  freeCashFlowSalesRatio: "FCF margin",
   freeCashFlowOperatingCashFlowRatio: "FCF / OCF",
+  operatingCashFlowNetIncomeRatio: "CFO / Net Income",
+  freeCashFlowNetIncomeRatio: "FCF / Net Income",
   operatingCashFlowPerShare: "OCF / Share",
   freeCashFlowPerShare: "FCF / Share",
   cashPerShare: "Cash / Share",
+  revenuePerShare: "Revenue / Share",
+  eps: "EPS (TTM)",
   priceEarningsRatio: "P/E",
   priceToSalesRatio: "P/S",
   priceToBookRatio: "P/B",
   enterpriseValueMultiple: "EV / EBITDA",
+  evToEbitda: "EV / EBITDA",
+  evToEbit: "EV / EBIT",
+  evToSales: "EV / Sales",
+  evToFreeCashFlow: "EV / FCF",
   priceToFreeCashFlowsRatio: "P/FCF",
   dividendYield: "Dividend Yield",
   priceEarningsToGrowthRatio: "PEG",
   payoutRatio: "Payout Ratio",
   dividendPayoutRatio: "Dividend Payout",
+  enterpriseValue: "Enterprise Value",
+  totalDebt: "Total Debt",
+  cashAndCashEquivalents: "Cash & Equivalents",
+  netDebt: "Net Debt",
+  ebitda: "EBITDA",
+  ebitdaMargin: "EBITDA Margin",
+  operatingIncome: "Operating Income",
+  operatingMargin: "Operating Margin",
+  interestExpense: "Interest Expense",
+  shareRepurchases: "Share Repurchases",
+  dividendsPaid: "Dividends Paid",
+  netBuybacks: "Net Buybacks",
+  buybackYield: "Buyback Yield",
+  shareholderYield: "Shareholder Yield",
+  sharesOutstanding: "Shares Outstanding",
+  sharesOutstandingYoY: "Shares YoY",
 };
 
 const normalizeRatioKey = (raw: string): string | null => {
@@ -119,7 +146,21 @@ const normalizeRatioKey = (raw: string): string | null => {
 const aliasRatioKey = (key: string): string => {
   const lower = key.toLowerCase();
   if (lower === "dividendyieldpercentage") return "dividendYield";
-  if (lower === "pricetoearningsratio") return "priceEarningsRatio";
+  if (lower === "pricetoearningsratio" || lower === "priceearningsratio") return "priceEarningsRatio";
+  if (lower === "pfcfratio") return "priceToFreeCashFlowsRatio";
+  if (lower === "roe") return "returnOnEquity";
+  if (lower === "roa") return "returnOnAssets";
+  if (lower === "roic") return "returnOnInvestedCapital";
+  if (lower === "netdebttoebitda") return "netDebtToEbitda";
+  if (lower === "enterprisevalueoverebitda") return "evToEbitda";
+  if (lower === "enterprisevaluetorevenue" || lower === "evtosales") return "evToSales";
+  if (lower === "evtoebit") return "evToEbit";
+  if (lower === "weightedaverageshsout" || lower === "weightedaverageshsoutdil")
+    return "sharesOutstanding";
+  if (lower === "epsdiluted") return "eps";
+  if (lower === "ebitdaratio") return "ebitdaMargin";
+  if (lower === "operatingincomeratio" || lower === "operatingincomemargin" || lower === "operatingmargin")
+    return "operatingMargin";
   return key;
 };
 
@@ -150,35 +191,144 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
   const [showRatios, setShowRatios] = useState(false);
 
   useEffect(() => {
+    const numMaybe = (v: any): number | null => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
     let cancelled = false;
     (async () => {
       setRatiosLoading(true);
       setRatiosError(null);
       try {
-        const res = await fetch(`/api/fmp/ratios-ttm?symbol=${encodeURIComponent(result.sym)}`, { cache: "no-store" });
-        const data = await res.json();
-        if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`);
+        const [ratiosRes, metricsRes, keyMetricsRes] = await Promise.all([
+          fetch(`/api/fmp/ratios-ttm?symbol=${encodeURIComponent(result.sym)}`, { cache: "no-store" }),
+          fetch(`/api/fmp/financial-metrics?symbol=${encodeURIComponent(result.sym)}`, { cache: "no-store" }),
+          fetch(`/api/fmp/key-metrics?symbol=${encodeURIComponent(result.sym)}`, { cache: "no-store" }),
+        ]);
 
-        const rows = Array.isArray(data?.ratios)
-          ? data.ratios
-          : Array.isArray(data?.rows)
-          ? data.rows
-          : Array.isArray(data)
-          ? data
+        const ratiosJson = await ratiosRes.json();
+        if (!ratiosRes.ok || ratiosJson?.error) throw new Error(ratiosJson?.error || `HTTP ${ratiosRes.status}`);
+        const ratioRows = Array.isArray(ratiosJson?.ratios)
+          ? ratiosJson.ratios
+          : Array.isArray(ratiosJson?.rows)
+          ? ratiosJson.rows
+          : Array.isArray(ratiosJson)
+          ? ratiosJson
           : [];
+        const ratioRecord =
+          ratioRows.length && typeof ratioRows[0] === "object" ? normalizeRatiosRecord(ratioRows[0]) : {};
 
-        const rec = rows.length ? rows[0] : null;
-        if (!rec || typeof rec !== "object") throw new Error("No ratios returned");
+        const metricsJson = await metricsRes.json();
+        if (!metricsRes.ok || metricsJson?.error) throw new Error(metricsJson?.error || `HTTP ${metricsRes.status}`);
+        const metrics: Record<string, number> = {};
+        if (metricsJson?.metrics && typeof metricsJson.metrics === "object") {
+          for (const [k, v] of Object.entries(metricsJson.metrics)) {
+            const num = Number(v);
+            if (Number.isFinite(num)) metrics[k] = num;
+          }
+        }
 
-        const normalized = normalizeRatiosRecord(rec);
-        const hasAny = Object.keys(RATIO_LABELS).some(
-          (k) => normalized[k] !== undefined && normalized[k] !== null
+        let keyMetricsRows: any[] = [];
+        try {
+          const keyMetricsJson = await keyMetricsRes.json();
+          if (keyMetricsRes.ok && !keyMetricsJson?.error) {
+            keyMetricsRows = Array.isArray(keyMetricsJson?.rows)
+              ? keyMetricsJson.rows
+              : Array.isArray(keyMetricsJson)
+              ? keyMetricsJson
+              : [];
+          }
+        } catch {
+          keyMetricsRows = [];
+        }
+
+        const sortedKm = [...keyMetricsRows].sort((a, b) => {
+          const ta = Date.parse(String((a as any)?.date ?? (a as any)?.calendarYear ?? 0));
+          const tb = Date.parse(String((b as any)?.date ?? (b as any)?.calendarYear ?? 0));
+          return (Number.isNaN(tb) ? -Infinity : tb) - (Number.isNaN(ta) ? -Infinity : ta);
+        });
+        const latestKm = sortedKm[0];
+        const priorKm = sortedKm[1];
+        const normKmLatest = latestKm ? normalizeRatiosRecord(latestKm) : {};
+        const normKmPrior = priorKm ? normalizeRatiosRecord(priorKm) : {};
+
+        const merged: Record<string, number> = {
+          ...ratioRecord,
+          ...metrics,
+          ...normKmLatest,
+        };
+
+        if (merged.netDebtToEbitda == null && merged.netDebt != null && merged.ebitda) {
+          const ratio = merged.ebitda === 0 ? null : merged.netDebt / merged.ebitda;
+          if (ratio != null && Number.isFinite(ratio)) merged.netDebtToEbitda = ratio;
+        }
+
+        const marketCap = numMaybe(result.keyStats?.marketCap ?? null);
+        const buybacks = numMaybe(merged.shareRepurchases);
+        const dividends = numMaybe(merged.dividendsPaid);
+        if (marketCap && buybacks) merged.buybackYield = buybacks / marketCap;
+        if (marketCap && (buybacks || dividends)) {
+          const numer = (buybacks ?? 0) + (dividends ?? 0);
+          if (numer !== 0) merged.shareholderYield = numer / marketCap;
+        }
+
+        const sharesLatest = numMaybe(
+          normKmLatest.sharesOutstanding ?? normKmLatest.weightedAverageShsOut ?? normKmLatest.weightedAverageShsOutDil
         );
-        if (!hasAny) throw new Error("No ratio data available");
-        if (!cancelled) setRatios(normalized);
+        const sharesPrior = numMaybe(
+          normKmPrior.sharesOutstanding ?? normKmPrior.weightedAverageShsOut ?? normKmPrior.weightedAverageShsOutDil
+        );
+        if (sharesLatest != null) merged.sharesOutstanding = sharesLatest;
+        if (sharesLatest != null && sharesPrior) {
+          const delta = sharesPrior === 0 ? null : (sharesLatest - sharesPrior) / sharesPrior;
+          if (delta != null && Number.isFinite(delta)) merged.sharesOutstandingYoY = delta;
+        }
+
+        const assignIf = (key: string, value: number | null) => {
+          if (value !== null && value !== undefined && Number.isFinite(value)) merged[key] = value;
+        };
+        assignIf("revenuePerShare", numMaybe(normKmLatest.revenuePerShare));
+        assignIf("eps", numMaybe(normKmLatest.eps ?? normKmLatest.epsdiluted ?? normKmLatest.netIncomePerShare));
+        assignIf("operatingCashFlowPerShare", numMaybe(normKmLatest.operatingCashFlowPerShare));
+        assignIf("freeCashFlowPerShare", numMaybe(normKmLatest.freeCashFlowPerShare));
+        assignIf("cashPerShare", numMaybe(normKmLatest.cashPerShare));
+
+        const fcfPerShare = numMaybe(merged.freeCashFlowPerShare);
+        const price = Number.isFinite(result.price) ? result.price : null;
+        if (!merged.priceToFreeCashFlowsRatio && price && fcfPerShare && fcfPerShare !== 0) {
+          merged.priceToFreeCashFlowsRatio = price / fcfPerShare;
+        }
+
+        if (merged.enterpriseValue && merged.freeCashFlow) {
+          const ratio = merged.freeCashFlow === 0 ? null : merged.enterpriseValue / merged.freeCashFlow;
+          if (ratio != null && Number.isFinite(ratio)) merged.evToFreeCashFlow = ratio;
+        }
+        if (merged.enterpriseValue && merged.revenue) {
+          const ratio = merged.revenue === 0 ? null : merged.enterpriseValue / merged.revenue;
+          if (ratio != null && Number.isFinite(ratio)) merged.evToSales = ratio;
+        }
+        if (merged.enterpriseValue && merged.ebit) {
+          const ratio = merged.ebit === 0 ? null : merged.enterpriseValue / merged.ebit;
+          if (ratio != null && Number.isFinite(ratio)) merged.evToEbit = ratio;
+        }
+
+        const hasAny = Object.keys(RATIO_LABELS).some(
+          (k) => merged[k] !== undefined && merged[k] !== null && Number.isFinite(merged[k] as number)
+        );
+        if (!hasAny) {
+          throw new Error("No ratio data available");
+        }
+
+        if (!cancelled) {
+          setRatios(merged);
+          setRatiosError(null);
+        }
       } catch (err: any) {
-        if (!cancelled) setRatiosError(err?.message || "Failed to load ratios");
-        if (!cancelled) setRatios(null);
+        if (!cancelled) {
+          setRatiosError(err?.message || "Failed to load ratios");
+          setRatios(null);
+        }
       } finally {
         if (!cancelled) setRatiosLoading(false);
       }
@@ -186,14 +336,19 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
     return () => {
       cancelled = true;
     };
-  }, [result.sym]);
+  }, [result.sym, result.price, result.keyStats?.marketCap]);
 
   const ratioGroups: { title: string; keys: string[] }[] = useMemo(
     () => [
       { title: "Profitability", keys: ["grossProfitMargin", "operatingProfitMargin", "netProfitMargin"] },
       { title: "Returns", keys: ["returnOnEquity", "returnOnAssets", "returnOnCapitalEmployed"] },
       { title: "Liquidity", keys: ["currentRatio", "quickRatio", "cashRatio"] },
-      { title: "Leverage / Solvency", keys: ["debtEquityRatio", "debtRatio", "interestCoverage", "cashFlowToDebtRatio"] },
+      { title: "Leverage / Solvency", keys: ["debtEquityRatio", "debtRatio", "cashFlowToDebtRatio"] },
+      { title: "Capital Structure", keys: ["enterpriseValue", "totalDebt", "cashAndCashEquivalents", "netDebt"] },
+      {
+        title: "Earnings & Coverage",
+        keys: ["ebitda", "ebitdaMargin", "operatingIncome", "operatingMargin", "interestExpense", "interestCoverage"],
+      },
       {
         title: "Efficiency",
         keys: [
@@ -207,6 +362,7 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
         ],
       },
       { title: "Cash-flow quality", keys: ["operatingCashFlowSalesRatio", "freeCashFlowOperatingCashFlowRatio"] },
+      { title: "Capital Returns", keys: ["shareRepurchases", "dividendsPaid", "netBuybacks"] },
       { title: "Per-share", keys: ["operatingCashFlowPerShare", "freeCashFlowPerShare", "cashPerShare"] },
       {
         title: "Valuation",
@@ -226,29 +382,68 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
     []
   );
 
+  const pctKeys = useMemo(
+    () =>
+      new Set([
+        "grossProfitMargin",
+        "operatingProfitMargin",
+        "netProfitMargin",
+        "returnOnEquity",
+        "returnOnAssets",
+        "returnOnCapitalEmployed",
+        "payoutRatio",
+        "dividendPayoutRatio",
+        "ebitdaMargin",
+        "operatingMargin",
+      ]),
+    []
+  );
+  const dayKeys = useMemo(
+    () =>
+      new Set([
+        "daysOfSalesOutstanding",
+        "daysOfInventoryOutstanding",
+        "daysOfPayablesOutstanding",
+        "cashConversionCycle",
+      ]),
+    []
+  );
+  const currencyKeys = useMemo(
+    () =>
+      new Set([
+        "enterpriseValue",
+        "totalDebt",
+        "cashAndCashEquivalents",
+        "netDebt",
+        "ebitda",
+        "operatingIncome",
+        "interestExpense",
+        "shareRepurchases",
+        "dividendsPaid",
+        "netBuybacks",
+      ]),
+    []
+  );
+
+  const fmtCurrencyCompact = useMemo(
+    () =>
+      new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        notation: "compact",
+        maximumFractionDigits: 1,
+      }),
+    []
+  );
+
   const formatRatioValue = (key: string, value?: number) => {
     if (value === undefined || value === null || Number.isNaN(value)) return "—";
-    const pctKeys = new Set([
-      "grossProfitMargin",
-      "operatingProfitMargin",
-      "netProfitMargin",
-      "returnOnEquity",
-      "returnOnAssets",
-      "returnOnCapitalEmployed",
-      "dividendYield",
-      "payoutRatio",
-      "dividendPayoutRatio",
-    ]);
-    const dayKeys = new Set([
-      "daysOfSalesOutstanding",
-      "daysOfInventoryOutstanding",
-      "daysOfPayablesOutstanding",
-      "cashConversionCycle",
-    ]);
+    if (key === "dividendYield") return `${(value * 100).toFixed(2)}%`;
     if (pctKeys.has(key)) return `${(value * 100).toFixed(1)}%`;
     if (dayKeys.has(key)) return `${value.toFixed(1)}d`;
-    if (key.toLowerCase().includes("perShare".toLowerCase())) return `$${value.toFixed(2)}`;
-    if (key === "dividendYield") return `${(value * 100).toFixed(2)}%`;
+    if (currencyKeys.has(key)) return fmtCurrencyCompact.format(value);
+    if (key.toLowerCase().includes("pershare")) return `$${value.toFixed(2)}`;
+    if (key === "interestCoverage") return `${value.toFixed(2)}×`;
     return value.toFixed(2);
   };
 
@@ -331,8 +526,14 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
     <>
       {/* Header */}
       <div className="bg-neutral-800 rounded-2xl p-4 border border-neutral-700 flex items-center justify-between">
-        <div className="font-medium">
-          Financial Summary <span className="ml-2 text-xs text-neutral-400">($ in thousands)</span>
+        <div className="flex flex-col">
+          <div className="font-medium flex items-center gap-2">
+            <span>Financial Summary</span>
+            <span className="text-xs text-neutral-400">($ in thousands)</span>
+          </div>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500 mt-1">
+            Source: Financial Modeling Prep
+          </div>
         </div>
         <div
           className={`w-5 h-5 rounded-full border border-neutral-700 shadow-[0_0_0_3px_rgba(0,0,0,0.35)] ${dotClass(
@@ -485,7 +686,7 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
                 if (!rows.length) return null;
                 return (
                   <div key={group.title} className="border border-neutral-700 rounded-xl p-3">
-                    <div className="text-xs uppercase tracking-wide text-neutral-400 mb-2">{group.title}</div>
+                    <div className="text-xs uppercase tracking-wide text-white font-semibold mb-2">{group.title}</div>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2 text-sm">
                       {rows.map((r) => (
                         <div key={r.key} className="flex items-center justify-between gap-2">

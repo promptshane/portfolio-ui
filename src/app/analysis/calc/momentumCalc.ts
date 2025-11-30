@@ -14,6 +14,7 @@ import {
   genTrio10,
   linRegStats,
   KeyStats,
+  CompanyProfile,
 } from "../shared";
 
 /** Optional ML config */
@@ -195,6 +196,21 @@ export async function fetchMLConfig(sym: string): Promise<MLConfig | undefined> 
 type FmpProfileRow = {
   companyName?: string;
   name?: string;
+  description?: string;
+  sector?: string;
+  industry?: string;
+  website?: string;
+  ceo?: string;
+  chiefExecutiveOfficer?: string;
+  fullTimeEmployees?: number | string;
+  employees?: number | string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  exchange?: string;
+  exchangeShortName?: string;
+  ipoDate?: string;
 
   marketCap?: number | string;
   mktCap?: number | string;
@@ -233,7 +249,13 @@ function parseRangeTo52w(range?: string): { low?: number; high?: number } {
   return {};
 }
 
-async function fetchFmpProfileAndStats(sym: string): Promise<{ name?: string; stats?: KeyStats }> {
+const cleanStr = (v: any) => (typeof v === "string" ? v.trim() : "");
+
+async function fetchFmpProfileAndStats(sym: string): Promise<{
+  name?: string;
+  stats?: KeyStats;
+  profile?: CompanyProfile;
+}> {
   const attempts = [
     `/api/fmp/profile?symbol=${encodeURIComponent(sym)}`,
     `/api/fmp/quote?symbol=${encodeURIComponent(sym)}`,
@@ -242,6 +264,26 @@ async function fetchFmpProfileAndStats(sym: string): Promise<{ name?: string; st
 
   let name: string | undefined;
   let stats: KeyStats | undefined;
+  let profile: CompanyProfile | undefined;
+
+  const setProfile = (key: keyof CompanyProfile, val: any) => {
+    const curr = profile?.[key];
+    const hasCurr =
+      curr !== undefined &&
+      curr !== null &&
+      (typeof curr !== "string" || (curr as string).trim() !== "");
+    if (hasCurr) return;
+    if (val === undefined || val === null) return;
+    if (typeof val === "string") {
+      const t = val.trim();
+      if (!t) return;
+      profile = { ...(profile ?? {}), [key]: t };
+      return;
+    }
+    if (typeof val === "number" && Number.isFinite(val)) {
+      profile = { ...(profile ?? {}), [key]: val };
+    }
+  };
 
   for (const url of attempts) {
     try {
@@ -257,6 +299,20 @@ async function fetchFmpProfileAndStats(sym: string): Promise<{ name?: string; st
       else if (data && typeof data === "object") row = data as FmpProfileRow;
 
       if (!row) continue;
+
+      setProfile("description", cleanStr((row as any).description));
+      setProfile("sector", cleanStr((row as any).sector));
+      setProfile("industry", cleanStr((row as any).industry));
+      setProfile("website", cleanStr((row as any).website));
+      setProfile("ceo", cleanStr((row as any).ceo ?? (row as any).chiefExecutiveOfficer));
+      setProfile("address", cleanStr((row as any).address));
+      setProfile("city", cleanStr((row as any).city));
+      setProfile("state", cleanStr((row as any).state ?? (row as any).stateProvince));
+      setProfile("country", cleanStr((row as any).country));
+      setProfile("exchange", cleanStr((row as any).exchangeShortName ?? (row as any).exchange));
+      setProfile("ipoDate", cleanStr((row as any).ipoDate));
+      const employees = num((row as any).fullTimeEmployees ?? (row as any).employees);
+      if (Number.isFinite(employees)) setProfile("employees", employees);
 
       const price = num((row as any).price);
       const marketCap = num((row as any).marketCap ?? (row as any).mktCap);
@@ -318,7 +374,13 @@ async function fetchFmpProfileAndStats(sym: string): Promise<{ name?: string; st
     stats = undefined;
   }
 
-  return { name, stats };
+  const profileHasValues =
+    profile &&
+    Object.values(profile).some(
+      (v) => v !== undefined && v !== null && (typeof v !== "string" || v.trim())
+    );
+
+  return { name, stats, profile: profileHasValues ? profile : undefined };
 }
 
 async function fetchFmpRatiosTTM(
@@ -715,6 +777,7 @@ export async function evaluateStock(symIn: string, useReal: boolean): Promise<Ev
     return {
       sym,
       name: companyName,
+      companyProfile: prof?.profile,
       keyStats: prof?.stats,
       price: last,
       changeAbs,
@@ -883,6 +946,19 @@ export async function evaluateStock(symIn: string, useReal: boolean): Promise<Ev
       high52w: mockHigh52,
       low52w: mockLow52,
       avgVolume: mockAvgVol,
+    },
+    companyProfile: {
+      description: `${sym} builds products and services across consumer and enterprise segments. This is placeholder text for mock mode.`,
+      sector: "Technology",
+      industry: "Software",
+      website: "https://example.com",
+      ceo: "Alex Smith",
+      employees: 42000,
+      city: "San Francisco",
+      state: "CA",
+      country: "United States",
+      exchange: "NASDAQ",
+      ipoDate: "2012-05-18",
     },
     price,
     changeAbs,

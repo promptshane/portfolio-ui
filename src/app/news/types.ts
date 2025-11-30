@@ -17,6 +17,8 @@ export type NewsItem = {
   summary: string;
   keyPoints: string[];
   actions: string[];
+  ongoingActions: string[];
+  ongoingTickers: string[];
   tickers: string[];
   tickerDetails: NewsTickerDetail[];
   viewed: boolean;
@@ -41,6 +43,7 @@ export type ApiArticle = {
   keyPointsJson: string | null;
   actionsJson: string | null;
   tickersJson: string | null;
+  discountJson?: string | null;
   summarizedAt: string | null;
   positionTickers?: string[]; // Symbols derived from positions/allocations attached to the article
   viewed?: boolean;
@@ -82,4 +85,15 @@ export type NewsJobInfo = {
   lastError: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type HighlightRect = { x: number; y: number; width: number; height: number };
+export type NewsHighlight = {
+  id: number;
+  page: number;
+  text: string;
+  rects: HighlightRect[];
+  signature: string;
+  createdAt?: string | null;
+  comment?: string | null;
 };

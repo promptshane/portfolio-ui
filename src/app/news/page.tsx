@@ -561,8 +561,9 @@ export default function NewsPage() {
   }
 
   function handleDownload(id: string) {
-    const url = `/api/news/articles/${encodeURIComponent(id)}/file`;
-    window.open(url, "_blank");
+    void markViewed(id);
+    const url = `/news/viewer/${encodeURIComponent(id)}`;
+    window.open(url, "_blank", "noreferrer");
   }
 
   // Open repost panel, pre-filling from any existing repost (if present)

@@ -132,6 +132,7 @@ export default function MomentumDisplay({
         anyDeriv1={anyDeriv1}
         anyDeriv2={anyDeriv2}
         keyStats={data.keyStats}
+        companyProfile={result.companyProfile}
         oneMonthInterval={oneMonthInterval}
         setOneMonthInterval={setOneMonthInterval}
         colorizePrice={colorizePrice}

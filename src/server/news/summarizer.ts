@@ -4,6 +4,9 @@ import { toFile } from "openai/uploads";
 import prisma from "@/lib/prisma";
 import { readPdfBuffer, getArticleById } from "./store";
 
+const FMP_BASE = "https://financialmodelingprep.com/stable";
+const fxCache = new Map<string, number>();
+
 if (!process.env.OPENAI_API_KEY) {
   throw new Error("OPENAI_API_KEY is not set");
 }
@@ -47,6 +50,8 @@ export type SummaryPayload = {
   key_points: string[];
   actions: SummaryAction[];
   tickers: SummaryTicker[];
+  ongoing_actions: SummaryAction[];
+  ongoing_tickers: SummaryTicker[];
   positions: SummaryPosition[];
 };
 
@@ -103,12 +108,26 @@ Read the entire document and produce a concise summary in the following JSON for
       "ticker": ""
     }
   ],
+  "ongoing_actions": [
+    {
+      "description": "",
+      "ticker": ""
+    }
+  ],
   "tickers": [
     {
       "symbol": "",
       "name": "",
       "importance_rank": 1,
       "has_explicit_action": true
+    }
+  ],
+  "ongoing_tickers": [
+    {
+      "symbol": "",
+      "name": "",
+      "importance_rank": 1,
+      "has_explicit_action": false
     }
   ],
   "positions": [
@@ -139,16 +158,19 @@ Rules:
 - "author": Extract the main author name if present; otherwise use an empty string "".
 - "summary": 2-4 sentences capturing the core narrative of the article.
 - "key_points": 3-7 bullet points (as plain strings) describing the most important ideas or arguments.
-- "actions": Include only explicit investment actions such as Buy, Sell, Hold, Upgrade, Downgrade, Watch, Take profits, Trim, or similar. Each action should have:
+- "actions": NEW/UPDATED explicit investment actions in this article (what changed versus prior guidance). Examples: Buy, Sell, Hold, Upgrade, Downgrade, Watch, Take profits, Trim, Raise/Lower price target. Each action should have:
+ - "actions": NEW/UPDATED explicit investment actions in this article (what changed versus prior guidance). Examples: Buy, Sell, Hold, Upgrade, Downgrade, Watch, Take profits, Trim, Raise/Lower price target. Each action should have:
     - "description": Short human-readable description (for example: "Buy Pfizer (PFE) under $60 and hold for the long term.")
     - "ticker": The related ticker symbol if clearly associated (for example "PFE"), otherwise use an empty string "".
-  If there are no clear explicit actions, set "actions" to an empty list [].
-- "tickers": Extract every distinct finance-related ticker symbol that appears in the JSON fields \`summary\`, \`key_points\`, or \`actions\` (either in the action "description" or in the action "ticker" field).
-    - Do NOT include tickers that only appear elsewhere in the PDF if they are not present in those summary fields.
+  If there are no clear new/updated explicit actions, set "actions" to an empty list [].
+- "ongoing_actions": Actions that are reiterated or sustained from previous issues (no new change, but restated here). Include the same shape as "actions". If none, use []. Be exhaustive: capture plain-text notes AND any rows from position/holdings tables that represent continued guidance; phrase each description so it can be read aloud on its own (for example: "Maintain Buy recommendation for Northrop Grumman (NOC); buy up to $600; stop $520.").
+- "tickers": Extract every distinct finance-related ticker symbol that appears in the JSON fields \`summary\`, \`key_points\`, or the NEW/UPDATED \`actions\` list (either in the action "description" or in the action "ticker" field).
+    - Do NOT include tickers that only appear elsewhere in the PDF if they are not present in those summary/new-action fields.
     - "symbol": The ticker symbol (e.g. "PFE").
     - "name": The company or ETF name if clearly available; otherwise an empty string "".
     - "importance_rank": An integer where 1 is the most important ticker in this document.
     - "has_explicit_action": true if this ticker also appears in the "actions" list with a non-empty ticker; otherwise false.
+- "ongoing_tickers": Symbols that are mentioned in the article but ONLY in ongoing guidance (no new update). Include every ticker referenced in "ongoing_actions" AND any symbols that only appear in ongoing/continued guidance, position tables, or other reiterated sections but NOT in \`summary\`, \`key_points\`, or \`actions\`. If none, use [].
 - "positions": If the document includes a position table (buy/hold/sell grid), extract each row with the following fields:
     - "symbol": ticker symbol (e.g., "EWG").
     - "name": company/ETF name.
@@ -164,6 +186,7 @@ Rules:
     - "as_of": the date the table represents (if stated separately).
   - If no such table exists, return "positions": [].
 - If any field cannot be found in the document, fill it with an empty string "", an empty list [], or null as appropriate.
+- Convert all monetary values to USD before placing them in numeric fields. If the source is quoted in another currency, convert to USD (use recent FX rates you know) and mention the original currency in "notes" when useful.
 - Do not include any additional keys beyond those listed above.
 
 Very important: Return ONLY the JSON object, with no extra commentary or explanation.
@@ -249,13 +272,152 @@ function normalizeAuthorName(raw: any): string {
     .join(" ");
 }
 
-function normaliseSummary(raw: any): SummaryPayload {
+function detectCurrency(raw: string): string | null {
+  const upper = raw.toUpperCase();
+  if (upper.includes("CAD") || raw.includes("C$") || upper.includes("CAD$")) return "CAD";
+  if (upper.includes("AUD") || raw.includes("A$") || upper.includes("AUD$")) return "AUD";
+  if (upper.includes("HKD") || raw.includes("HK$")) return "HKD";
+  if (upper.includes("SGD") || raw.includes("S$")) return "SGD";
+  if (upper.includes("EUR") || raw.includes("€")) return "EUR";
+  if (upper.includes("GBP") || raw.includes("£")) return "GBP";
+  if (upper.includes("JPY") || raw.includes("¥") || raw.includes("￥")) return "JPY";
+  if (upper.includes("CNY") || upper.includes("RMB") || raw.includes("元")) return "CNY";
+  if (upper.includes("CHF")) return "CHF";
+  if (upper.includes("INR") || raw.includes("₹")) return "INR";
+  if (upper.includes("MXN")) return "MXN";
+  if (upper.includes("BRL")) return "BRL";
+  if (upper.includes("ZAR")) return "ZAR";
+  if (upper.includes("NZD")) return "NZD";
+  if (upper.includes("KRW") || raw.includes("₩")) return "KRW";
+  if (upper.includes("NOK")) return "NOK";
+  if (upper.includes("SEK")) return "SEK";
+  if (upper.includes("DKK")) return "DKK";
+  if (upper.includes("USD") || raw.includes("$")) return "USD";
+  const codeMatch = raw.match(/\b([A-Z]{3})\b/);
+  if (codeMatch) return codeMatch[1];
+  return null;
+}
+
+function parseMoneyValue(raw: any): { amount: number; currency: string | null } | null {
+  if (typeof raw === "number") {
+    return Number.isFinite(raw) ? { amount: raw, currency: null } : null;
+  }
+  if (typeof raw !== "string") return null;
+  const numMatch = raw.replace(/,/g, "").match(/[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?/);
+  const currency = detectCurrency(raw);
+  if (!numMatch) return null;
+  const amount = Number(numMatch[0]);
+  if (!Number.isFinite(amount)) return null;
+  return { amount, currency };
+}
+
+async function fetchFxRateToUsd(code: string): Promise<number | null> {
+  if (code === "USD") return 1;
+  if (!code) return null;
+  if (fxCache.has(code)) return fxCache.get(code)!;
+
+  const key = process.env.FMP_API_KEY || process.env.NEXT_PUBLIC_FMP_API_KEY;
+  const urls: string[] = [];
+  if (key) {
+    urls.push(`${FMP_BASE}/forex?from=${encodeURIComponent(code)}&to=USD&apikey=${key}`);
+    urls.push(`${FMP_BASE}/forex?pair=${encodeURIComponent(code)}USD&apikey=${key}`);
+  }
+
+  let rate: number | null = null;
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      const text = await res.text();
+      if (!res.ok) {
+        continue;
+      }
+      const json = JSON.parse(text);
+      const pickNumber = (obj: any): number | null => {
+        if (typeof obj === "number") return Number.isFinite(obj) ? obj : null;
+        if (!obj || typeof obj !== "object") return null;
+        const candidates = ["rate", "price", "value", "close", "bid", "ask"];
+        for (const k of candidates) {
+          const v = Number((obj as any)[k]);
+          if (Number.isFinite(v)) return v;
+        }
+        return null;
+      };
+      if (Array.isArray(json)) {
+        for (const item of json) {
+          const v = pickNumber(item);
+          if (v != null) {
+            rate = v;
+            break;
+          }
+        }
+      } else if (json && typeof json === "object") {
+        const arr = Array.isArray((json as any).forex) ? (json as any).forex : null;
+        if (arr) {
+          for (const item of arr) {
+            const v = pickNumber(item);
+            if (v != null) {
+              rate = v;
+              break;
+            }
+          }
+        }
+        if (rate == null) {
+          rate = pickNumber(json);
+        }
+      }
+      if (rate != null) break;
+    } catch {
+      // try next / fallback
+    }
+  }
+
+  if (rate == null) {
+    try {
+      const res = await fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" });
+      const json = await res.json().catch(() => null);
+      const inv = Number(json?.rates?.[code]);
+      if (Number.isFinite(inv) && inv > 0) {
+        rate = 1 / inv;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (rate != null) {
+    fxCache.set(code, rate);
+  }
+
+  return rate;
+}
+
+async function toUsdNumber(raw: any): Promise<number | null> {
+  const parsed = parseMoneyValue(raw);
+  if (!parsed) return null;
+  const { amount, currency } = parsed;
+  if (!currency || currency === "USD") return amount;
+  const fx = await fetchFxRateToUsd(currency);
+  if (fx == null) {
+    console.warn(`[news] FX rate unavailable for ${currency}; keeping source amount`);
+    return amount;
+  }
+  return amount * fx;
+}
+
+async function normaliseSummary(raw: any): Promise<SummaryPayload> {
   const keyPoints = Array.isArray(raw?.key_points)
     ? raw.key_points.map((v: any) => String(v))
     : [];
 
   const actions: SummaryAction[] = Array.isArray(raw?.actions)
     ? raw.actions.map((a: any) => ({
+        description: typeof a?.description === "string" ? a.description : "",
+        ticker: typeof a?.ticker === "string" ? a.ticker : "",
+      }))
+    : [];
+
+  const ongoingActions: SummaryAction[] = Array.isArray(raw?.ongoing_actions)
+    ? raw.ongoing_actions.map((a: any) => ({
         description: typeof a?.description === "string" ? a.description : "",
         ticker: typeof a?.ticker === "string" ? a.ticker : "",
       }))
@@ -274,51 +436,45 @@ function normaliseSummary(raw: any): SummaryPayload {
       }))
     : [];
 
-  const positions: SummaryPosition[] = Array.isArray(raw?.positions)
-    ? raw.positions.map((p: any) => ({
-        symbol: typeof p?.symbol === "string" ? p.symbol : "",
-        name: typeof p?.name === "string" ? p.name : "",
-        recommendation: typeof p?.recommendation === "string" ? p.recommendation : "",
-        allocation:
-          typeof p?.allocation === "number"
-            ? p.allocation
-            : typeof p?.allocation === "string"
-            ? Number(p.allocation.replace(/[^0-9.+-]/g, ""))
-            : null,
-        entry_date: typeof p?.entry_date === "string" ? p.entry_date : "",
-        entry_price:
-          typeof p?.entry_price === "number"
-            ? p.entry_price
-            : typeof p?.entry_price === "string"
-            ? Number(p.entry_price.replace(/[^0-9.+-]/g, ""))
-            : null,
-        current_price:
-          typeof p?.current_price === "number"
-            ? p.current_price
-            : typeof p?.current_price === "string"
-            ? Number(p.current_price.replace(/[^0-9.+-]/g, ""))
-            : null,
-        return_pct:
-          typeof p?.return_pct === "number"
-            ? p.return_pct
-            : typeof p?.return_pct === "string"
-            ? Number(p.return_pct.replace(/[^0-9.+-]/g, ""))
-            : null,
-        fair_value:
-          typeof p?.fair_value === "number"
-            ? p.fair_value
-            : typeof p?.fair_value === "string"
-            ? Number(p.fair_value.replace(/[^0-9.+-]/g, ""))
-            : null,
-        stop_price:
-          typeof p?.stop_price === "number"
-            ? p.stop_price
-            : typeof p?.stop_price === "string"
-            ? Number(p.stop_price.replace(/[^0-9.+-]/g, ""))
-            : null,
-        notes: typeof p?.notes === "string" ? p.notes : "",
-        as_of: typeof p?.as_of === "string" ? p.as_of : "",
+  const ongoingTickersRaw: SummaryTicker[] = Array.isArray(raw?.ongoing_tickers)
+    ? raw.ongoing_tickers.map((t: any) => ({
+        symbol: typeof t?.symbol === "string" ? t.symbol : "",
+        name: typeof t?.name === "string" ? t.name : "",
+        importance_rank:
+          typeof t?.importance_rank === "number" ? t.importance_rank : 0,
+        has_explicit_action: !!t?.has_explicit_action,
       }))
+    : [];
+
+  const positions: SummaryPosition[] = Array.isArray(raw?.positions)
+    ? (
+        await Promise.all(
+          raw.positions.map(async (p: any) => ({
+            symbol: typeof p?.symbol === "string" ? p.symbol : "",
+            name: typeof p?.name === "string" ? p.name : "",
+            recommendation: typeof p?.recommendation === "string" ? p.recommendation : "",
+            allocation:
+              typeof p?.allocation === "number"
+                ? p.allocation
+                : typeof p?.allocation === "string"
+                ? Number(p.allocation.replace(/[^0-9.+-]/g, ""))
+                : null,
+            entry_date: typeof p?.entry_date === "string" ? p.entry_date : "",
+            entry_price: await toUsdNumber(p?.entry_price),
+            current_price: await toUsdNumber(p?.current_price),
+            return_pct:
+              typeof p?.return_pct === "number"
+                ? p.return_pct
+                : typeof p?.return_pct === "string"
+                ? Number(p.return_pct.replace(/[^0-9.+-]/g, ""))
+                : null,
+            fair_value: await toUsdNumber(p?.fair_value),
+            stop_price: await toUsdNumber(p?.stop_price),
+            notes: typeof p?.notes === "string" ? p.notes : "",
+            as_of: typeof p?.as_of === "string" ? p.as_of : "",
+          }))
+        )
+      ).filter((p): p is SummaryPosition => !!p)
     : [];
 
   // Build a combined text blob from the visible fields so we only keep
@@ -350,6 +506,37 @@ function normaliseSummary(raw: any): SummaryPayload {
   const authorRaw =
     typeof raw?.author === "string" ? raw.author : "";
 
+  const normaliseTicker = (t: SummaryTicker) => ({
+    symbol: (t.symbol || "").trim(),
+    name: (t.name || "").trim(),
+    importance_rank: Number.isFinite(t.importance_rank) ? t.importance_rank : 0,
+    has_explicit_action: !!t.has_explicit_action,
+  });
+
+  const summaryTickerSymbols = new Set(
+    filteredTickers
+      .map((t) => (t.symbol || "").toUpperCase().trim())
+      .filter(Boolean)
+  );
+
+  const cleanedOngoingTickers = ongoingTickersRaw
+    .map(normaliseTicker)
+    .filter((t) => {
+      const sym = t.symbol.toUpperCase();
+      return sym && !summaryTickerSymbols.has(sym);
+    });
+
+  const dedup = (tickers: SummaryTicker[]) => {
+    const seen = new Set<string>();
+    return tickers.filter((t) => {
+      const sym = t.symbol.toUpperCase();
+      if (!sym) return false;
+      if (seen.has(sym)) return false;
+      seen.add(sym);
+      return true;
+    });
+  };
+
   return {
     title: typeof raw?.title === "string" ? raw.title : "",
     date_published:
@@ -358,7 +545,9 @@ function normaliseSummary(raw: any): SummaryPayload {
     summary: summaryText,
     key_points: keyPoints,
     actions,
-    tickers: filteredTickers,
+    tickers: dedup(filteredTickers),
+    ongoing_actions: ongoingActions,
+    ongoing_tickers: dedup(cleanedOngoingTickers),
     positions,
   };
 }
@@ -434,7 +623,21 @@ export async function generateAndStoreSummary(
     throw new Error("Model did not return valid JSON for summary.");
   }
 
-  const summary = normaliseSummary(parsed);
+  const summary = await normaliseSummary(parsed);
+
+  const buildDiscountPayload = () => {
+    const payload: {
+      positions?: SummaryPosition[];
+      ongoing_actions?: SummaryAction[];
+      ongoing_tickers?: SummaryTicker[];
+    } = {};
+
+    if (summary.positions?.length) payload.positions = summary.positions;
+    if (summary.ongoing_actions?.length) payload.ongoing_actions = summary.ongoing_actions;
+    if (summary.ongoing_tickers?.length) payload.ongoing_tickers = summary.ongoing_tickers;
+
+    return Object.keys(payload).length ? payload : null;
+  };
 
   // Robust parsing for publication date:
   // - If it's a plain YYYY-MM-DD string, treat it as a local date (to avoid
@@ -473,7 +676,10 @@ export async function generateAndStoreSummary(
       keyPointsJson: JSON.stringify(summary.key_points),
       actionsJson: JSON.stringify(summary.actions),
       tickersJson: JSON.stringify(summary.tickers),
-      discountJson: summary.positions?.length ? JSON.stringify(summary.positions) : null,
+      discountJson: (() => {
+        const payload = buildDiscountPayload();
+        return payload ? JSON.stringify(payload) : null;
+      })(),
       summarizedAt: new Date(),
     },
   });

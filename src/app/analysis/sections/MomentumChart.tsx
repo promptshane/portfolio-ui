@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { IndicKey, RangeKey, toPathXY, KeyStats } from "../shared";
+import { IndicKey, RangeKey, toPathXY, KeyStats, CompanyProfile } from "../shared";
 
 /** Local extension so we can add ADX + intraday ranges without touching shared types yet */
 type ExtIndicKey = IndicKey | "adx";
@@ -67,6 +67,7 @@ type Props = {
 
   /** NEW (optional): stats for Key Statistics expandable */
   keyStats?: KeyStats;
+  companyProfile?: CompanyProfile;
   oneMonthInterval: "1h" | "1d";
   setOneMonthInterval: (v: "1h" | "1d") => void;
   colorizePrice: boolean;
@@ -155,6 +156,26 @@ function fmtPriceMaybe(n?: number | null) {
   return `$${n.toFixed(2)}`;
 }
 
+function fmtIntMaybe(n?: number | null) {
+  if (n == null || !Number.isFinite(n)) return "—";
+  return Math.round(n).toLocaleString();
+}
+
+function fmtShortDateMaybe(v?: string | null) {
+  if (!v) return "—";
+  const d = parseDateString(v);
+  if (!d) return "—";
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function fmtLocation(profile?: CompanyProfile) {
+  if (!profile) return "";
+  const parts = [profile.city, profile.state, profile.country]
+    .map((p) => (typeof p === "string" ? p.trim() : ""))
+    .filter(Boolean);
+  return parts.join(", ");
+}
+
 export default function MomentumChart({
   range,
   setRange,
@@ -183,6 +204,7 @@ export default function MomentumChart({
   anyDeriv1,
   anyDeriv2,
   keyStats,
+  companyProfile,
   oneMonthInterval,
   setOneMonthInterval,
   colorizePrice,
@@ -217,7 +239,44 @@ export default function MomentumChart({
     [momentumGeom, iHover]
   );
 
-  const statsRows = useMemo(() => {
+  const companyDescription = (companyProfile?.description || "").trim();
+
+  const profileRows = useMemo(() => {
+    const p = companyProfile;
+    const rows: { label: string; value: React.ReactNode }[] = [];
+    if (p?.sector) rows.push({ label: "Sector", value: p.sector });
+    if (p?.industry) rows.push({ label: "Industry", value: p.industry });
+    if (p?.ceo) rows.push({ label: "CEO", value: p.ceo });
+    if (p && p.employees !== undefined && p.employees !== null) {
+      const formatted = fmtIntMaybe(p.employees);
+      if (formatted !== "—") rows.push({ label: "Employees", value: formatted });
+    }
+    const hq = fmtLocation(p);
+    if (hq) rows.push({ label: "Headquarters", value: hq });
+    if (p?.exchange) rows.push({ label: "Exchange", value: p.exchange });
+    if (p?.ipoDate) rows.push({ label: "IPO Date", value: fmtShortDateMaybe(p.ipoDate) });
+    if (p?.website) {
+      const trimmed = p.website.trim();
+      const href = trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
+      const label = trimmed.replace(/^https?:\/\//, "");
+      rows.push({
+        label: "Website",
+        value: (
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="underline text-neutral-100 hover:text-white"
+          >
+            {label}
+          </a>
+        ),
+      });
+    }
+    return rows;
+  }, [companyProfile]);
+
+  const marketStatRows = useMemo(() => {
     const s = keyStats ?? {};
     return [
       { label: "Market Cap", value: fmtCap(s.marketCap) },
@@ -227,7 +286,7 @@ export default function MomentumChart({
       { label: "52W High", value: fmtPriceMaybe(s.high52w) },
       { label: "52W Low", value: fmtPriceMaybe(s.low52w) },
       { label: "Avg Volume", value: fmtCap(s.avgVolume) },
-    ];
+    ].filter((r) => r.value !== "—");
   }, [keyStats]);
 
   const showHoverLabel = hoverI !== null && !!hoveredDate;
@@ -803,7 +862,7 @@ export default function MomentumChart({
         </div>
       </div>
 
-      {/* Key Statistics expandable (minimalist) */}
+      {/* Company details expandable */}
       <div className="mt-3 pt-3 border-t border-neutral-700">
         <button
           type="button"
@@ -811,7 +870,7 @@ export default function MomentumChart({
           className="w-full flex items-center justify-between text-left"
           aria-expanded={showStats}
         >
-          <span className="text-sm text-neutral-300">Key Statistics</span>
+          <span className="text-sm text-neutral-300">Company Details</span>
           <span
             className={`text-neutral-400 text-xs transition-transform ${
               showStats ? "rotate-180" : ""
@@ -822,13 +881,42 @@ export default function MomentumChart({
         </button>
 
         {showStats && (
-          <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2 text-sm">
-            {statsRows.map((r) => (
-              <div key={r.label} className="flex items-center justify-between gap-2">
-                <span className="text-neutral-400">{r.label}</span>
-                <span className="text-neutral-100 tabular-nums">{r.value}</span>
+          <div className="mt-2 space-y-3 text-sm">
+            {companyDescription ? (
+              <p className="text-neutral-100 leading-relaxed">{companyDescription}</p>
+            ) : null}
+
+            {profileRows.length ? (
+              <div className="space-y-1">
+                <div className="text-xs uppercase tracking-wide text-white font-semibold">Profile</div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2">
+                  {profileRows.map((r) => (
+                    <div key={r.label} className="flex items-center justify-between gap-2">
+                      <span className="text-neutral-400">{r.label}</span>
+                      <span className="text-neutral-100 tabular-nums text-right">{r.value}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
+            ) : null}
+
+            {marketStatRows.length ? (
+              <div className="space-y-1">
+                <div className="text-xs uppercase tracking-wide text-white font-semibold">Market Stats</div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2">
+                  {marketStatRows.map((r) => (
+                    <div key={r.label} className="flex items-center justify-between gap-2">
+                      <span className="text-neutral-400">{r.label}</span>
+                      <span className="text-neutral-100 tabular-nums">{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {!companyDescription && !profileRows.length && !marketStatRows.length ? (
+              <div className="text-neutral-400">No company details available.</div>
+            ) : null}
           </div>
         )}
       </div>

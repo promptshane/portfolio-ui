@@ -407,6 +407,8 @@ export default function FTVDisplay({ result }: Props) {
       ? toneFromRatio(hoverPrice / fve)
       : undefined;
 
+  const sourceLabel = preferDiscount ? "Discount Hub" : "Morningstar";
+
   // Decide fallback rendering AFTER hooks are declared to keep hook order stable
   const showFallback = docsLoaded && !activeMeta && fallbackFve === undefined && !preferDiscount;
   const fallbackSuffix = activeMeta?.confirmedAt
@@ -426,7 +428,12 @@ export default function FTVDisplay({ result }: Props) {
         <>
           {/* Header */}
           <div className="bg-neutral-800 rounded-2xl p-4 border border-neutral-700 flex items-center justify-between">
-            <div className="font-medium">FTV Summary</div>
+            <div className="flex flex-col">
+              <div className="font-medium">FTV Summary</div>
+              <div className="text-[11px] uppercase tracking-wide text-neutral-500 mt-1">
+                Source: {sourceLabel}
+              </div>
+            </div>
 
             <div className="flex items-center gap-3">
               {activeMeta && (

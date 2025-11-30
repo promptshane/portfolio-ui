@@ -24,14 +24,6 @@ function formatCurrency(n: number | undefined | null) {
     ? `$${Math.round(n).toLocaleString()}`
     : `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
-function formatPct(n: number | undefined | null) {
-  if (n === undefined || n === null || Number.isNaN(n)) return "-";
-  return `${(n * 100).toFixed(0)}%`;
-}
-function formatRatio(n: number | undefined | null) {
-  if (n === undefined || n === null || Number.isNaN(n) || !isFinite(n)) return "-";
-  return `${n.toFixed(2)}×`;
-}
 
 // Treat bare YYYY-MM-DD as UTC to avoid local-tz backshift (1-day lag)
 function formatDate(s?: string) {
@@ -274,6 +266,14 @@ export default function FTVTiles({ result, latest, fallbackFve, hoverInfo }: FTV
   const overUnder = fve && activePrice ? (activePrice - fve) / fve : undefined;
 
   const ratioTone: "good" | "bad" | "mid" | undefined = toneFromRatio(ratio);
+  const discountMeta =
+    typeof overUnder === "number"
+      ? overUnder < 0
+        ? { label: "Discount", pct: Math.abs(overUnder * 100) }
+        : overUnder > 0
+        ? { label: "Premium", pct: Math.abs(overUnder * 100) }
+        : { label: "At FVE", pct: 0 }
+      : null;
 
   const moat = latest.moat ?? "-";
   // Style Box remains parsed on `latest.styleBox` but is intentionally not rendered for now.
@@ -330,10 +330,16 @@ export default function FTVTiles({ result, latest, fallbackFve, hoverInfo }: FTV
     ) : null;
 
   // ESG value "<value> <category>" if both; else numeric; else em-dash.
-  const esgValue: React.ReactNode =
-    esgRisk !== undefined
-      ? (esgCategory ? `${esgRisk} ${esgCategory}` : esgRisk)
-      : "-";
+  const hasEsgRisk = esgRisk !== null && esgRisk !== undefined && !Number.isNaN(Number(esgRisk));
+  const formatEsgScore = (n: number) => {
+    const fixed = Math.abs(n) >= 10 ? n.toFixed(1) : n.toFixed(2);
+    return fixed.replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
+  };
+  const esgValue: React.ReactNode = hasEsgRisk
+    ? esgCategory
+      ? `${formatEsgScore(Number(esgRisk))} ${esgCategory}`
+      : formatEsgScore(Number(esgRisk))
+    : esgCategory || "-";
 
   return (
     <>
@@ -357,14 +363,18 @@ export default function FTVTiles({ result, latest, fallbackFve, hoverInfo }: FTV
                 {hoverDateEl}
               </span>
               <span className="mt-1">
-                Live Price / FVE:&nbsp;
-                <strong className={ratioToneClass}>{formatRatio(ratio)}</strong>
-                {typeof overUnder === "number" ? (
-                  <span className="ml-2 opacity-80">
-                    ({overUnder >= 0 ? "+" : ""}
-                    {formatPct(overUnder)} vs FVE)
-                  </span>
-                ) : null}
+                {discountMeta ? (
+                  discountMeta.label === "At FVE" ? (
+                    "At Fair Value"
+                  ) : (
+                    <>
+                      {discountMeta.label}:{" "}
+                      <strong className={ratioToneClass}>{discountMeta.pct.toFixed(0)}%</strong>
+                    </>
+                  )
+                ) : (
+                  "—"
+                )}
               </span>
             </div>
           }

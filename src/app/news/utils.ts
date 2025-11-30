@@ -65,6 +65,94 @@ export function decorateTextWithTickers(
   return result;
 }
 
+function parseDiscountData(discountJson: string | null): {
+  ongoingActions: string[];
+  ongoingTickers: string[];
+} {
+  const result = { ongoingActions: [] as string[], ongoingTickers: [] as string[] };
+  if (!discountJson) return result;
+
+  const formatMoney = (value: any) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return "";
+    return `$${num.toLocaleString(undefined, {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 0,
+    })}`;
+  };
+
+  try {
+    const parsed = JSON.parse(discountJson);
+
+    const actionsSource =
+      parsed && typeof parsed === "object" && Array.isArray((parsed as any).ongoing_actions)
+        ? (parsed as any).ongoing_actions
+        : null;
+    if (actionsSource) {
+      for (const a of actionsSource) {
+        if (typeof a === "string") {
+          result.ongoingActions.push(a);
+          continue;
+        }
+        if (a && typeof a.description === "string") {
+          result.ongoingActions.push(a.description);
+        }
+        if (a && typeof a.ticker === "string" && a.ticker.trim()) {
+          result.ongoingTickers.push(a.ticker.trim().toUpperCase());
+        }
+      }
+    }
+
+    const positionsSource =
+      parsed && typeof parsed === "object" && Array.isArray((parsed as any).positions)
+        ? (parsed as any).positions
+        : null;
+    if (positionsSource) {
+      for (const pos of positionsSource) {
+        const symbol = typeof pos?.symbol === "string" ? pos.symbol.trim().toUpperCase() : "";
+        const name = typeof pos?.name === "string" ? pos.name.trim() : "";
+        const rec = typeof pos?.recommendation === "string" ? pos.recommendation.trim() : "";
+        const fairValue = formatMoney(pos?.fair_value ?? pos?.fairValue);
+        const stopPrice = formatMoney(pos?.stop_price ?? pos?.stopPrice);
+        const entryPrice = formatMoney(pos?.entry_price ?? pos?.entryPrice);
+
+        const label = [symbol, name].filter(Boolean).join(" — ") || "Position";
+        const parts: string[] = [];
+        if (rec) parts.push(rec);
+        if (entryPrice) parts.push(`entry ${entryPrice}`);
+        if (fairValue) parts.push(`buy-up-to ${fairValue}`);
+        if (stopPrice) parts.push(`stop ${stopPrice}`);
+
+        const detail = parts.length ? parts.join("; ") : "continued guidance";
+        result.ongoingActions.push(
+          `Maintain ${detail} for ${label} (ongoing guidance).`
+        );
+        if (symbol) result.ongoingTickers.push(symbol);
+      }
+    }
+
+    const tickersSource =
+      parsed && typeof parsed === "object" && Array.isArray((parsed as any).ongoing_tickers)
+        ? (parsed as any).ongoing_tickers
+        : null;
+    if (tickersSource) {
+      for (const t of tickersSource) {
+        if (typeof t === "string" && t.trim()) {
+          result.ongoingTickers.push(t.trim().toUpperCase());
+        } else if (t && typeof t.symbol === "string" && t.symbol.trim()) {
+          result.ongoingTickers.push(t.symbol.trim().toUpperCase());
+        }
+      }
+    }
+  } catch {
+    /* ignore parse errors */
+  }
+
+  result.ongoingActions = result.ongoingActions.filter(Boolean);
+  result.ongoingTickers = Array.from(new Set(result.ongoingTickers));
+  return result;
+}
+
 /**
  * Map the raw API article shape into the normalized NewsItem used by the UI.
  */
@@ -137,13 +225,11 @@ export function mapApiArticleToNewsItem(a: ApiArticle): NewsItem | null {
     }
   }
 
-  // Pull tickers from any attached positions (allocation/FTV tables) so that
-  // articles with structured data still show up for the relevant ticker even
-  // if the summary text doesn't explicitly mention it.
+  const { ongoingActions, ongoingTickers } = parseDiscountData(a.discountJson ?? null);
+
   if (Array.isArray(a.positionTickers)) {
     for (const v of a.positionTickers) {
-      if (typeof v !== "string") continue;
-      appendTicker(v, "");
+      if (typeof v === "string" && v.trim()) ongoingTickers.push(v.trim().toUpperCase());
     }
   }
 
@@ -230,6 +316,8 @@ export function mapApiArticleToNewsItem(a: ApiArticle): NewsItem | null {
     summary: a.summaryText || "",
     keyPoints,
     actions,
+    ongoingActions,
+    ongoingTickers: Array.from(new Set(ongoingTickers)),
     tickers,
     tickerDetails,
     viewed: !!a.viewed,
