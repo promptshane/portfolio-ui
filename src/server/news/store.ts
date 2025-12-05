@@ -1,7 +1,6 @@
 // src/server/news/store.ts
-import fs from "fs";
-import path from "path";
 import crypto from "crypto";
+import path from "path";
 import type { NewsArticle } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { deleteObject, getObjectBuffer, putObjectBuffer, s3Enabled } from "../s3Client";
@@ -22,21 +21,24 @@ function generateArticleId(buffer: Buffer): string {
   return hash.slice(0, 40);
 }
 
-function buildLocalCandidates(storedPath: string): string[] {
-  if (path.isAbsolute(storedPath)) {
-    return [storedPath];
+async function storageExists(article: NewsArticle): Promise<boolean> {
+  try {
+    const buf = await getObjectBuffer(article.pdfPath);
+    if (buf) return true;
+  } catch {
+    /* missing or inaccessible */
   }
-  // Support both legacy relative paths (data/news-pdfs/...) and the newer key-only format (news-pdfs/...)
-  return [
-    path.join(process.cwd(), storedPath),
-    path.join(process.cwd(), "data", storedPath),
-  ];
+  return false;
 }
 
 export async function addPdfFromBuffer(
   buffer: Buffer,
-  originalFilename: string
+  originalFilename: string,
+  options?: { sourceEmail?: string | null }
 ): Promise<{ article: NewsArticle; isDuplicate: boolean }> {
+  if (!s3Enabled) {
+    throw new Error("S3 is not configured. Cloud storage is required for news PDFs.");
+  }
   const id = generateArticleId(buffer);
   const existing = await prisma.newsArticle.findUnique({
     where: { id },
@@ -44,37 +46,61 @@ export async function addPdfFromBuffer(
 
   // Duplicate by content: do not rewrite or create a new row
   if (existing) {
-    return { article: existing, isDuplicate: true };
+    const hasStorage = await storageExists(existing);
+    if (hasStorage) {
+      return { article: existing, isDuplicate: true };
+    }
+    // Storage missing: clean up stale record and re-store
+    try {
+      await deletePdf(existing.id);
+    } catch {
+      /* ignore cleanup errors */
+    }
   }
 
   const storedExtension = determineStoredExtension(originalFilename);
   const key = `news-pdfs/${id}${storedExtension}`;
-  const relativePath = path.join("data", "news-pdfs", `${id}${storedExtension}`);
-  const storedPathForDb = s3Enabled ? key : relativePath;
+  const storedPathForDb = key;
 
-  if (s3Enabled) {
-    await putObjectBuffer({
-      key,
-      body: buffer,
-      contentType: storedExtension === ".txt" ? "text/plain" : "application/pdf",
-      tags: { section: "news", kind: "article-pdf" },
-      metadata: { section: "news", kind: "article-pdf", articleId: id },
-    });
-  } else {
-    const absolutePath = path.join(process.cwd(), relativePath);
-    await fs.promises.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.promises.writeFile(absolutePath, buffer);
-  }
+  await putObjectBuffer({
+    key,
+    body: buffer,
+    contentType: storedExtension === ".txt" ? "text/plain" : "application/pdf",
+    tags: { section: "news", kind: "article-pdf" },
+    metadata: { section: "news", kind: "article-pdf", articleId: id },
+  });
 
   const article = await prisma.newsArticle.create({
     data: {
       id,
       originalFilename,
       pdfPath: storedPathForDb,
+      sourceEmail: options?.sourceEmail?.trim().toLowerCase() || null,
     },
   });
 
   return { article, isDuplicate: false };
+}
+
+export async function filenameExistsAndValid(filename: string): Promise<boolean> {
+  const name = filename.trim();
+  if (!name) return false;
+  const existing = await prisma.newsArticle.findFirst({
+    where: { originalFilename: name },
+    select: { id: true, pdfPath: true },
+  });
+  if (!existing) return false;
+
+  const hasStorage = await storageExists(existing as NewsArticle);
+  if (hasStorage) return true;
+
+  // Storage missing: clean up stale record so ingest can re-store
+  try {
+    await deletePdf(existing.id);
+  } catch {
+    /* ignore */
+  }
+  return false;
 }
 
 export async function listPdfs(): Promise<NewsArticle[]> {
@@ -99,72 +125,15 @@ export async function readPdfBuffer(id: string): Promise<Buffer> {
     throw new Error(`NewsArticle not found for id=${id}`);
   }
 
-  const tryReadLocal = async (): Promise<Buffer | null> => {
-    const candidates = buildLocalCandidates(article.pdfPath);
-    for (const candidate of candidates) {
-      try {
-        return await fs.promises.readFile(candidate);
-      } catch {
-        // try next candidate
-      }
-    }
-    return null;
-  };
-
-  const ensureS3Copy = async (buffer: Buffer) => {
-    if (!s3Enabled) return;
-
-    // Normalise key so legacy "data/news-pdfs/..." paths upload to the
-    // canonical "news-pdfs/<id>.ext" location.
-    const ext =
-      path.extname(article.pdfPath || "") ||
-      determineStoredExtension(article.originalFilename || `${article.id}.pdf`);
-    const key = `news-pdfs/${article.id}${ext}`;
-
-    try {
-      await putObjectBuffer({
-        key,
-        body: buffer,
-        contentType: ext === ".txt" ? "text/plain" : "application/pdf",
-        tags: { section: "news", kind: "article-pdf" },
-        metadata: { section: "news", kind: "article-pdf", articleId: article.id },
-      });
-
-      if (article.pdfPath !== key) {
-        await prisma.newsArticle.update({
-          where: { id: article.id },
-          data: { pdfPath: key },
-        });
-      }
-    } catch (err) {
-      console.warn(
-        `[news] Failed to sync PDF ${article.id} to S3 (continuing with local copy):`,
-        err
-      );
-    }
-  };
-
-  if (s3Enabled) {
-    try {
-      const buf = await getObjectBuffer(article.pdfPath);
-      if (buf) return buf;
-    } catch {
-      // If S3 fetch fails, fall back to local below.
-    }
-
-    const local = await tryReadLocal();
-    if (local) {
-      await ensureS3Copy(local);
-      return local;
-    }
-
-    throw new Error("PDF not found in S3 or local storage");
+  if (!s3Enabled) {
+    throw new Error("S3 is not configured. Cloud storage is required for news PDFs.");
   }
 
-  const local = await tryReadLocal();
-  if (local) return local;
-
-  throw new Error(`PDF not found on local disk for id=${id}`);
+  const buf = await getObjectBuffer(article.pdfPath);
+  if (!buf) {
+    throw new Error("PDF not found in S3 storage");
+  }
+  return buf;
 }
 
 export async function deletePdf(id: string): Promise<void> {
@@ -172,25 +141,27 @@ export async function deletePdf(id: string): Promise<void> {
     where: { id },
   });
 
-  if (article) {
-    if (s3Enabled && article.pdfPath) {
-      await deleteObject(article.pdfPath);
-    }
-    // Best-effort local cleanup; S3 cleanup can be handled separately via lifecycle or manual delete.
-    const candidates = buildLocalCandidates(article.pdfPath);
-    for (const candidate of candidates) {
-      try {
-        await fs.promises.unlink(candidate);
-        break;
-      } catch {
-        // ignore if file is already gone
-      }
-    }
+  if (!article) {
+    return;
   }
 
-  await prisma.newsArticle.delete({
-    where: { id },
-  });
+  if (!s3Enabled) {
+    throw new Error("S3 is not configured. Cloud storage is required for news PDFs.");
+  }
+
+  if (article.pdfPath) {
+    await deleteObject(article.pdfPath);
+  }
+
+  try {
+    await prisma.newsArticle.delete({
+      where: { id },
+    });
+  } catch (err: any) {
+    if (err?.code !== "P2025") {
+      throw err;
+    }
+  }
 }
 
 /**
@@ -213,7 +184,12 @@ export type SummaryPayload = {
 
 export async function saveSummary(
   id: string,
-  payload: SummaryPayload
+  payload: SummaryPayload,
+  options?: {
+    storageDecision?: string | null;
+    qualityTag?: string | null;
+    qualityNote?: string | null;
+  }
 ): Promise<NewsArticle> {
   const datePublished =
     payload.datePublished instanceof Date
@@ -251,6 +227,18 @@ export async function saveSummary(
         : null,
       actionsJson: payload.actions ? JSON.stringify(payload.actions) : null,
       tickersJson: payload.tickers ? JSON.stringify(payload.tickers) : null,
+      storageDecision:
+        typeof options?.storageDecision === "string" && options.storageDecision.trim()
+          ? options.storageDecision.trim()
+          : "Store",
+      qualityTag:
+        typeof options?.qualityTag === "string" && options.qualityTag.trim()
+          ? options.qualityTag.trim()
+          : "Good",
+      qualityNote:
+        typeof options?.qualityNote === "string" && options.qualityNote.trim()
+          ? options.qualityNote.trim()
+          : null,
       discountJson: (() => {
         const discountPayload = buildDiscountPayload();
         return discountPayload ? JSON.stringify(discountPayload) : null;

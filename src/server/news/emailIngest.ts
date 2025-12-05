@@ -2,10 +2,11 @@ import fs from "fs";
 import path from "path";
 import { google, gmail_v1 } from "googleapis";
 import type { OAuth2Client } from "google-auth-library";
-import { addPdfFromBuffer } from "./store";
+import { addPdfFromBuffer, filenameExistsAndValid } from "./store";
+import { renderHtmlToPdf, wrapPlainTextAsHtml } from "./emailPdf";
+
 const DEFAULT_LOOKBACK_DAYS = 7;
 const DEFAULT_MAX_EMAILS = 100;
-const MIN_CLEAN_WORDS_FOR_UPLOAD = 80;
 const MAX_LOOKBACK_DAYS = 365;
 const MAX_EMAIL_FETCH = 2000;
 
@@ -43,53 +44,12 @@ export type EmailIngestSummary = {
   filesInserted: number;
   duplicates: number;
   pdfUploads: number;
-  textUploads: number;
+  attachmentPdfUploads: number;
+  bodyPdfUploads: number;
   skippedEmails: number;
   totalCandidates: number;
   createdArticleIds: string[];
 };
-
-const REPLY_CUTOFF_PATTERNS = [
-  /^begin forwarded message:.*$/i,
-  /^forwarded message.*$/i,
-  /^fwd:\s+.*$/i,
-  /^on .* wrote:.*$/i,
-  /^from:\s+.*$/i,
-  /^sent:\s+.*$/i,
-  /^date:\s+.*$/i,
-  /^subject:\s+.*$/i,
-  /^to:\s+.*$/i,
-  /^cc:\s+.*$/i,
-  /^reply-to:\s+.*$/i,
-  /^-{2,}\s*original message\s*-{2,}$/i,
-];
-
-const FOOTER_STOP_PATTERNS = [
-  /^good investing,?\s*$/i,
-  /^all the best,?\s*$/i,
-  /^sincerely,?\s*$/i,
-  /^regards,?\s*$/i,
-  /^best regards,?\s*$/i,
-  /^published by\b.*$/i,
-  /^you are receiving this e-?mail\b.*$/i,
-  /^if you no longer want to receive\b.*$/i,
-  /^unsubscribe\b.*$/i,
-  /^privacy policy\b.*$/i,
-  /^terms of (service|use)\b.*$/i,
-  /^©\s*\d{4}\b.*$/i,
-  /^\(c\)\s*\d{4}\b.*$/i,
-  /^all rights reserved\b.*$/i,
-  /^the law prohibits\b.*$/i,
-];
-
-const URL_RE = /https?:\/\/\S+/gi;
-const CSSISH_RE = /(\{|\}|;|\bfont-|\bcolor:|\bpadding:|\bmargin:)/i;
-const NOISE_CONTAINS = [
-  "delivering world-class financial research",
-  "view this email in your browser",
-  "trouble viewing this email",
-  "email preference center",
-];
 
 async function ensureGmailDir() {
   await fs.promises.mkdir(GMAIL_DIR, { recursive: true });
@@ -222,116 +182,121 @@ function walkParts(part?: gmail_v1.Schema$MessagePart): gmail_v1.Schema$MessageP
   return out;
 }
 
-function extractBody(payload?: gmail_v1.Schema$MessagePart): string {
-  if (!payload) return "";
+function extractBodies(payload?: gmail_v1.Schema$MessagePart): {
+  html: string;
+  text: string;
+} {
+  if (!payload) return { html: "", text: "" };
   const parts = walkParts(payload);
   let textPlain: string | null = null;
   let textHtml: string | null = null;
 
   for (const part of parts) {
     const mimeType = (part.mimeType || "").toLowerCase();
-    if (!part.body) continue;
-    const data = decodeBodyData(part.body.data);
+    if (!mimeType.startsWith("text/")) continue;
+    const data = decodeBodyData(part.body?.data);
     if (!data) continue;
 
-    if (mimeType === "text/plain" && textPlain === null) {
-      textPlain = data.trim();
-    } else if (mimeType === "text/html" && textHtml === null) {
+    if (mimeType === "text/html" && textHtml === null) {
       textHtml = data.trim();
+    } else if (mimeType === "text/plain" && textPlain === null) {
+      textPlain = data.trim();
     }
   }
 
-  if (textPlain) return textPlain;
-  if (textHtml) {
-    return textHtml.replace(/<[^>]+>/g, " ").trim();
+  if (!textHtml && !textPlain && payload.body?.data) {
+    const inline = decodeBodyData(payload.body.data).trim();
+    if ((payload.mimeType || "").toLowerCase() === "text/html") {
+      textHtml = inline;
+    } else {
+      textPlain = inline;
+    }
   }
-  return "";
+
+  return { html: textHtml || "", text: textPlain || "" };
 }
 
-function stripUrls(line: string): string {
-  return line.replace(URL_RE, "");
+const QUOTED_CLASS_PATTERN = /(gmail_quote|gmail_attr)/i;
+const FORWARD_MARKER_RE = /-{2,}\s*forwarded message\s*-{2,}/i;
+const FORWARD_REFERENCES = ["from:", "date:", "subject:", "to:"];
+
+function removeQuotedSections(html: string): string {
+  let cleaned = html;
+  cleaned = cleaned.replace(/<head[\s\S]*?<\/head>/gi, " ");
+  cleaned = cleaned.replace(/<script[\s\S]*?<\/script>/gi, " ");
+  cleaned = cleaned.replace(/<style[\s\S]*?<\/style>/gi, " ");
+  cleaned = cleaned.replace(/<blockquote[^>]*>[\s\S]*?<\/blockquote>/gi, " ");
+  const classBlockRe = new RegExp(
+    `<[^>]*class=["'][^"']*(${QUOTED_CLASS_PATTERN.source})[^"']*["'][^>]*>[\\s\\S]*?<\\/[^>]+>`,
+    "gi"
+  );
+  cleaned = cleaned.replace(classBlockRe, " ");
+  return cleaned;
 }
 
-function isForwardHeaderLine(line: string): boolean {
-  return REPLY_CUTOFF_PATTERNS.some((re) => re.test(line));
+function convertHtmlToText(html: string): string {
+  let text = removeQuotedSections(html);
+  text = text.replace(/<\/?(p|div|tr|li|ul|ol)[^>]*>/gi, "\n");
+  text = text.replace(/<br\s*\/?>/gi, "\n");
+  text = text.replace(/<\/?[^>]+>/g, " ");
+  text = text.replace(/&nbsp;/gi, " ");
+  text = text.replace(/&amp;/gi, "&");
+  text = text.replace(/&lt;/gi, "<");
+  text = text.replace(/&gt;/gi, ">");
+  text = text.replace(/\r/g, "");
+  return text;
 }
 
-function isFooterLine(line: string): boolean {
-  return FOOTER_STOP_PATTERNS.some((re) => re.test(line));
-}
+function removeForwardHeaderBlock(text: string): string {
+  const lines = text.split(/\r?\n/);
+  let startIndex = 0;
+  let sawForward = false;
+  let endIndex = lines.length;
 
-function isNoiseLine(lineRaw: string): boolean {
-  const line = lineRaw || "";
-  const trimmedLower = line.trim().toLowerCase();
-  if (!trimmedLower) return true;
-  if (CSSISH_RE.test(line)) return true;
-  if (NOISE_CONTAINS.some((phrase) => trimmedLower.includes(phrase))) {
-    return true;
-  }
-  const withoutUrls = stripUrls(line).trim();
-  if (!withoutUrls) return true;
-  if (trimmedLower.startsWith("http://") || trimmedLower.startsWith("https://")) {
-    return true;
-  }
-  if (trimmedLower.includes("click here") && withoutUrls.length < 60) {
-    return true;
-  }
-  return false;
-}
-
-function seemsContentLine(line: string): boolean {
-  const trimmed = line.trim();
-  if (!trimmed) return false;
-  if (isNoiseLine(line)) return false;
-  if (isFooterLine(trimmed.toLowerCase())) return false;
-  const alphaCount = (line.match(/[A-Za-z]/g) || []).length;
-  return alphaCount >= 3;
-}
-
-function cleanBody(raw: string): string {
-  if (!raw) return "";
-  const lines = raw.split(/\r?\n/).map((l) => l.replace(/\s+$/, ""));
-  const filtered: string[] = [];
-
-  for (const line of lines) {
-    const lower = line.trim().toLowerCase();
-    if (isForwardHeaderLine(lower) || isNoiseLine(line)) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) {
+      if (sawForward) continue;
+      startIndex = i + 1;
       continue;
     }
-    const noUrls = stripUrls(line);
-    const normalized = noUrls.replace(/\s{2,}/g, " ").trim();
-    filtered.push(normalized);
-  }
 
-  while (filtered.length && !filtered[0].trim()) {
-    filtered.shift();
-  }
+    const lower = trimmed.toLowerCase();
+    if (FORWARD_MARKER_RE.test(lower)) {
+      sawForward = true;
+      startIndex = i + 1;
+      continue;
+    }
 
-  let startIdx = 0;
-  for (let i = 0; i < filtered.length; i += 1) {
-    if (seemsContentLine(filtered[i])) {
-      startIdx = i;
-      break;
+    if (sawForward) {
+      const isRef = FORWARD_REFERENCES.some((ref) => lower.startsWith(ref));
+      if (!isRef) {
+        endIndex = i;
+        break;
+      }
     }
   }
 
-  const cleaned: string[] = [];
-  for (const line of filtered.slice(startIdx)) {
-    const lower = line.trim().toLowerCase();
-    if (isFooterLine(lower)) break;
-    cleaned.push(line);
+  return lines.slice(startIndex, endIndex).join("\n");
+}
+
+function collapseWhitespace(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function buildBodyCandidate(payload?: gmail_v1.Schema$MessagePart): {
+  html: string;
+  cleanedText: string;
+} {
+  const { html, text } = extractBodies(payload);
+  const preferredHtml = html || (text ? wrapPlainTextAsHtml(text) : "");
+  if (!preferredHtml) {
+    return { html: "", cleanedText: "" };
   }
-
-  return cleaned.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-}
-
-function countWords(text: string): number {
-  const matches = text.match(/\b\w+\b/g);
-  return matches ? matches.length : 0;
-}
-
-function bodyWorthUpload(cleaned: string): boolean {
-  return countWords(cleaned) >= MIN_CLEAN_WORDS_FOR_UPLOAD;
+  const cleanedText = collapseWhitespace(
+    removeForwardHeaderBlock(convertHtmlToText(preferredHtml))
+  );
+  return { html: preferredHtml, cleanedText };
 }
 
 function extractAttachmentParts(
@@ -360,6 +325,12 @@ function buildQuery(
 function safeFilename(name: string, fallback: string): string {
   const base = name && name.trim().length > 0 ? name : fallback;
   return base.replace(/[^\w.\-]+/g, "_").slice(0, 200) || fallback;
+}
+
+function toPdfFilename(subject: string | undefined, messageId: string): string {
+  const base = (subject || "email").trim().slice(0, 60) || "email";
+  const sanitized = base.replace(/[^\w.\-]+/g, "_");
+  return `${sanitized}-${messageId}.pdf`;
 }
 
 async function fetchMessageIds(
@@ -432,12 +403,6 @@ async function fetchPdfAttachments(
   return files;
 }
 
-function toTextFilename(subject: string | undefined, messageId: string): string {
-  const base = (subject || "email").trim().slice(0, 60) || "email";
-  const sanitized = base.replace(/[^\w.\-]+/g, "_");
-  return `${sanitized}-${messageId}.txt`;
-}
-
 function normalizeSenders(raw: string[] | undefined): string[] {
   if (!raw?.length) return [];
   return raw
@@ -453,6 +418,9 @@ function clampNumber(value: number, min: number, max: number): number {
 export async function ingestEmailsFromGmail(
   params: EmailIngestParams
 ): Promise<EmailIngestSummary> {
+  if (!process.env.S3_BUCKET) {
+    throw new Error("S3 is not configured. Email ingest requires cloud storage for PDFs.");
+  }
   const senders = normalizeSenders(params.senders || []);
   const lookbackDays = clampNumber(
     params.lookbackDays ?? DEFAULT_LOOKBACK_DAYS,
@@ -475,7 +443,8 @@ export async function ingestEmailsFromGmail(
   let filesInserted = 0;
   let duplicates = 0;
   let pdfUploads = 0;
-  let textUploads = 0;
+  let attachmentPdfUploads = 0;
+  let bodyPdfUploads = 0;
   let totalCandidates = 0;
   let skippedEmails = 0;
   const createdArticleIds: string[] = [];
@@ -484,6 +453,7 @@ export async function ingestEmailsFromGmail(
     let payload: gmail_v1.Schema$MessagePart | undefined;
     let headers: gmail_v1.Schema$MessagePartHeader[] = [];
     let subject = "";
+    let fromEmail: string | null = null;
 
     try {
       const { data } = await gmailClient.users.messages.get({
@@ -496,36 +466,65 @@ export async function ingestEmailsFromGmail(
       subject =
         headers.find((h) => (h.name || "").toLowerCase() === "subject")
           ?.value || "";
+      const fromHeader =
+        headers.find((h) => (h.name || "").toLowerCase() === "from")?.value || "";
+      if (fromHeader) {
+        const match = fromHeader.match(/<([^>]+)>/);
+        const candidate = (match?.[1] || fromHeader || "").trim().toLowerCase();
+        const emailMatch = candidate.match(/[^\s@<>]+@[^\s@<>]+/);
+        fromEmail = emailMatch ? emailMatch[0].toLowerCase() : null;
+      }
     } catch (err) {
       console.error("Failed to fetch Gmail message", messageId, err);
       skippedEmails += 1;
       continue;
     }
 
-    const rawBody = extractBody(payload);
-    const cleanedBody = cleanBody(rawBody);
+    const bodyCandidate = buildBodyCandidate(payload);
     const pdfAttachments = await fetchPdfAttachments(
       gmailClient,
       messageId,
       payload
     );
 
-    const filesForEmail: { name: string; data: Buffer; type: "pdf" | "text" }[] =
+    const filesForEmail: { name: string; data: Buffer; source: "attachment" | "body" }[] =
       [];
 
     if (pdfAttachments.length) {
       for (const file of pdfAttachments) {
-        filesForEmail.push({ ...file, type: "pdf" });
+        filesForEmail.push({ ...file, source: "attachment" });
       }
-    } else if (bodyWorthUpload(cleanedBody)) {
-      filesForEmail.push({
-        name: safeFilename(
-          toTextFilename(subject, messageId),
-          `${messageId}.txt`
-        ),
-        data: Buffer.from(cleanedBody, "utf-8"),
-        type: "text",
-      });
+    } else {
+      const textPayload =
+        (bodyCandidate.cleanedText && bodyCandidate.cleanedText.trim()) ||
+        (bodyCandidate.html && bodyCandidate.html.trim()) ||
+        "";
+      if (textPayload.length) {
+        const pdfName = safeFilename(
+          toPdfFilename(subject, messageId),
+          `${messageId}.pdf`
+        );
+        try {
+          const pdfBuffer = await renderHtmlToPdf(
+            bodyCandidate.html || wrapPlainTextAsHtml(textPayload),
+            pdfName
+          );
+          filesForEmail.push({
+            name: pdfName,
+            data: pdfBuffer,
+            source: "body",
+          });
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : "Failed to convert email body to PDF.";
+          console.error("Failed to convert email body", { messageId, message });
+          filesForEmail.push({
+            name: `${pdfName.replace(/\\.pdf$/i, "") || messageId}.txt`,
+            data: Buffer.from(textPayload, "utf-8"),
+            source: "body",
+          });
+        }
+      }
     }
 
     if (!filesForEmail.length) {
@@ -536,8 +535,14 @@ export async function ingestEmailsFromGmail(
     totalCandidates += filesForEmail.length;
 
     for (const file of filesForEmail) {
+      if (await filenameExistsAndValid(file.name)) {
+        duplicates += 1;
+        continue;
+      }
       try {
-        const { isDuplicate, article } = await addPdfFromBuffer(file.data, file.name);
+        const { isDuplicate, article } = await addPdfFromBuffer(file.data, file.name, {
+          sourceEmail: fromEmail,
+        });
         if (isDuplicate) {
           duplicates += 1;
           continue;
@@ -547,12 +552,13 @@ export async function ingestEmailsFromGmail(
         if (article?.id) {
           createdArticleIds.push(article.id);
         }
-        if (file.type === "pdf") {
-          pdfUploads += 1;
+        pdfUploads += 1;
+        if (file.source === "attachment") {
+          attachmentPdfUploads += 1;
         } else {
-          textUploads += 1;
+          bodyPdfUploads += 1;
         }
-  } catch (err) {
+      } catch (err) {
         console.error(
           "Failed to store Gmail-derived file",
           file.name,
@@ -568,7 +574,8 @@ export async function ingestEmailsFromGmail(
     filesInserted,
     duplicates,
     pdfUploads,
-    textUploads,
+    attachmentPdfUploads,
+    bodyPdfUploads,
     skippedEmails,
     totalCandidates,
     createdArticleIds,

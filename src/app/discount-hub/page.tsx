@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Header from "../components/header";
 import type { DiscountPositionDto } from "@/types/discount";
 
@@ -74,6 +74,7 @@ export default function DiscountHubPage() {
   const [quotesLoaded, setQuotesLoaded] = useState(0);
   const [loadingDots, setLoadingDots] = useState(".");
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const autoRetryRef = useRef(false);
 
   const symbols = useMemo(() => {
     return Array.from(
@@ -131,12 +132,24 @@ export default function DiscountHubPage() {
         }
       }
 
-      await runChunks(symbols);
-      const missing = symbols.filter((s) => !(s in collected));
-      if (missing.length) {
-        await runChunks(missing);
+      let attempt = 0;
+      let remaining = [...symbols];
+      while (attempt < 3 && remaining.length && !cancelled) {
+        await runChunks(remaining);
+        remaining = symbols.filter((s) => !(s in collected));
+        attempt += 1;
+        if (remaining.length && attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 700));
+        }
       }
-      if (!cancelled) setQuotesLoading(false);
+
+      if (!cancelled) {
+        if (remaining.length && hadError) {
+          setQuotesError((prev) => prev || "Some quotes unavailable after retries.");
+        }
+        setQuotesLoaded(Object.keys(collected).length);
+        setQuotesLoading(false);
+      }
     })();
 
     return () => {
@@ -164,13 +177,23 @@ export default function DiscountHubPage() {
           throw new Error(newsData?.error || `HTTP ${newsRes.status}`);
         }
         if (aborted) return;
-        setLatest(newsData.latest ?? []);
+        const latestRows = (newsData.latest ?? []).filter((row) => row && row.symbol);
+        setLatest(latestRows);
         setHistory(newsData.history ?? {});
 
         if (ftvRes.ok && ftvData?.ok) {
           setFtvLatest(ftvData.items ?? []);
         } else {
           setFtvLatest([]);
+        }
+
+        if (latestRows.length > 0) {
+          autoRetryRef.current = false;
+        }
+
+        if (!latestRows.length && !autoRetryRef.current) {
+          autoRetryRef.current = true;
+          setTimeout(() => setRefreshNonce((n) => n + 1), 2500);
         }
       } catch (err: any) {
         if (!aborted) setError(err?.message || "Failed to load discount data.");
@@ -181,18 +204,18 @@ export default function DiscountHubPage() {
     return () => {
       aborted = true;
     };
-  }, []);
+  }, [refreshNonce]);
 
   // Animated "Loading..." subtitle while quotes are being fetched
   useEffect(() => {
-    if (!quotesLoading) return;
+    if (!quotesLoading && !loading) return;
     let dots = ".";
     const id = setInterval(() => {
       dots = dots.length >= 3 ? "." : `${dots}.`;
       setLoadingDots(dots);
     }, 450);
     return () => clearInterval(id);
-  }, [quotesLoading]);
+  }, [quotesLoading, loading]);
 
   const subtitleText = (() => {
     const showLoading = quotesLoading || loading || (symbols.length > 0 && quotesLoaded === 0);
@@ -205,6 +228,7 @@ export default function DiscountHubPage() {
     setQuotesLoaded(0);
     setQuotesError(null);
     setQuotesLoading(true);
+    autoRetryRef.current = false;
     setRefreshNonce((n) => n + 1);
   };
 
@@ -221,7 +245,7 @@ export default function DiscountHubPage() {
       const sym = (item.symbol || "").toUpperCase();
       const quote = sym ? quotes?.[sym] : undefined;
       const livePrice = Number.isFinite(quote?.price) ? Number(quote?.price) : null;
-      const priceUsed = livePrice ?? null;
+      const priceUsed = livePrice ?? item.currentPrice ?? null;
       const entry = item.entryPrice ?? null;
       const liveReturnPct = entry && priceUsed ? ((priceUsed - entry) / entry) * 100 : null;
       const discountPct =
@@ -282,7 +306,7 @@ export default function DiscountHubPage() {
       ...(includeFtv ? hydratedFtv : []),
     ]
       .map((item) => {
-        const price = item.livePrice ?? null;
+        const price = item.priceUsed ?? item.livePrice ?? null;
         const fv = item.fairValue ?? null;
         if (price == null || fv == null) return null;
         const discountPct = ((fv - price) / price) * 100;

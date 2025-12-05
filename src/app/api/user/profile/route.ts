@@ -77,12 +77,22 @@ export async function POST(req: NextRequest) {
     typeof body?.preferredName === "string" ? body.preferredName.trim() : undefined;
   const username =
     typeof body?.username === "string" ? body.username.trim() : undefined;
+  const emailRaw =
+    typeof body?.email === "string" ? body.email.trim() : undefined;
   const colorPaletteRaw =
     typeof body?.colorPalette === "string" ? body.colorPalette.trim() : undefined;
 
   const data: Record<string, any> = {};
   if (preferredName !== undefined) data.preferredName = preferredName || null;
   if (username !== undefined) data.username = username;
+  if (emailRaw !== undefined) {
+    const emailLower = emailRaw.toLowerCase();
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRe.test(emailLower)) {
+      return NextResponse.json({ error: "Invalid email" }, { status: 400 });
+    }
+    data.email = emailLower;
+  }
 
   if (colorPaletteRaw !== undefined) {
     const lower = colorPaletteRaw.toLowerCase();
@@ -90,10 +100,8 @@ export async function POST(req: NextRequest) {
       default: "classic",
       classic: "classic",
       icy: "icy",
-      violet: "violet",
       luxe: "luxe",
-      blueamberteal: "blueAmberTeal",
-      crimsonvioletmint: "crimsonVioletMint",
+      traffic: "traffic",
     };
     const mapped = paletteMap[lower];
     if (mapped) data.colorPalette = mapped;

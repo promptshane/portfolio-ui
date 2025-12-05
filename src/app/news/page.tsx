@@ -1,7 +1,7 @@
 // src/app/news/page.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../components/header";
 import type {
@@ -48,7 +48,6 @@ export default function NewsPage() {
   const [sortOpen, setSortOpen] = useState(false);
   const sortDropdownRef = useRef<HTMLDivElement | null>(null);
   const [timeframe, setTimeframe] = useState<TimeframeOption>("1W");
-  const [selectedAuthors, setSelectedAuthors] = useState<string[]>([]);
   const [tickerFilterInput, setTickerFilterInput] =
     useState<string>("");
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
@@ -56,6 +55,8 @@ export default function NewsPage() {
     useState(false);
   const [filterWatchlistMatches, setFilterWatchlistMatches] =
     useState(false);
+  const [sortPrefsKey, setSortPrefsKey] = useState<string | null>(null);
+  const sortPrefsLoadedRef = useRef(false);
 
   // Repost UI state
   const [repostDraft, setRepostDraft] = useState<RepostDraft | null>(
@@ -64,7 +65,6 @@ export default function NewsPage() {
   const { activeJob, jobRunning, refreshJobs, setPolling } = useNewsJobs({ pollIntervalMs: 4000 });
   const [refreshBusy, setRefreshBusy] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
-  const [subtitleOverride, setSubtitleOverride] = useState<string | null>(null);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
 
   const actionButtonClass =
@@ -72,6 +72,8 @@ export default function NewsPage() {
 
   const [processingStep, setProcessingStep] = useState(0);
   const loadingActive = refreshBusy || jobRunning;
+  const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
+  const [refreshPhaseActive, setRefreshPhaseActive] = useState(false);
 
   useEffect(() => {
     if (!loadingActive) {
@@ -123,6 +125,67 @@ export default function NewsPage() {
   useEffect(() => {
     setPolling(jobRunning);
   }, [jobRunning, setPolling]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const hydratePrefs = (key: string) => {
+      try {
+        const raw = window.localStorage.getItem(key);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (typeof parsed?.timeframe === "string") setTimeframe(parsed.timeframe as TimeframeOption);
+        if (typeof parsed?.tickerFilterInput === "string") setTickerFilterInput(parsed.tickerFilterInput);
+        if (typeof parsed?.showUnreadOnly === "boolean") setShowUnreadOnly(parsed.showUnreadOnly);
+        if (typeof parsed?.filterPortfolioMatches === "boolean")
+          setFilterPortfolioMatches(parsed.filterPortfolioMatches);
+        if (typeof parsed?.filterWatchlistMatches === "boolean")
+          setFilterWatchlistMatches(parsed.filterWatchlistMatches);
+      } catch {
+        /* ignore malformed prefs */
+      } finally {
+        sortPrefsLoadedRef.current = true;
+      }
+    };
+
+    const fetchProfile = async () => {
+      try {
+        const res = await fetch("/api/user/profile", { cache: "no-store", credentials: "include" });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        const id = data?.id || data?.userId || data?.user?.id;
+        const email = data?.email || data?.user?.email;
+        const key = `news-sort:${id ?? email ?? "anon"}`;
+        setSortPrefsKey(key);
+        hydratePrefs(key);
+      } catch {
+        if (cancelled) return;
+        const key = "news-sort:anon";
+        setSortPrefsKey(key);
+        hydratePrefs(key);
+      }
+    };
+
+    fetchProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sortPrefsKey || !sortPrefsLoadedRef.current) return;
+    const payload = {
+      timeframe,
+      tickerFilterInput,
+      showUnreadOnly,
+      filterPortfolioMatches,
+      filterWatchlistMatches,
+    };
+    try {
+      window.localStorage.setItem(sortPrefsKey, JSON.stringify(payload));
+    } catch {
+      /* ignore quota errors */
+    }
+  }, [filterPortfolioMatches, filterWatchlistMatches, showUnreadOnly, sortPrefsKey, tickerFilterInput, timeframe]);
 
   useEffect(() => {
     if (!jobRunning) return;
@@ -307,25 +370,117 @@ export default function NewsPage() {
     }
   }
 
-  async function handleRefreshNews() {
-    if (refreshBusy || jobRunning) return;
-    setRefreshError(null);
-    setRefreshBusy(true);
+  const fetchVerifiedSenders = useCallback(async (): Promise<string[]> => {
     try {
+      const res = await fetch("/api/user/verified-emails", { cache: "no-store", credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      const selected: string[] = Array.isArray(data?.selected) ? data.selected : [];
+      const combined: string[] = Array.isArray(data?.combined) ? data.combined : [];
+      const list = selected.length ? selected : combined;
+      return list.map((e) => e.trim()).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const startSummarizeJob = useCallback(
+    async (articleIds: string[]) => {
+      const ids = Array.from(new Set(articleIds.map((id) => String(id).trim()).filter(Boolean)));
+      if (!ids.length) return null;
       const res = await fetch("/api/news/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ type: "refresh", lookbackDays: 7, maxEmails: 100, replaceExisting: true }),
+        body: JSON.stringify({
+          type: "summarize",
+          articleIds: ids,
+          replaceExisting: true,
+          label: "refresh-auto",
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error || `HTTP ${res.status}`);
       }
       await refreshJobs();
+      return data?.job ?? null;
+    },
+    [refreshJobs]
+  );
+
+  async function handleRefreshNews() {
+    if (refreshBusy || jobRunning) return;
+    setRefreshError(null);
+    setRefreshStatus("Loading…");
+    setRefreshPhaseActive(true);
+    setRefreshBusy(true);
+    try {
+      const verifiedSenders = await fetchVerifiedSenders();
+      if (!verifiedSenders.length) {
+        throw new Error("Add at least one verified sender email in Settings before refreshing.");
+      }
+
+      const ingestRes = await fetch("/api/news/email-ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          senders: verifiedSenders,
+          lookbackDays: 7,
+          maxEmails: 100,
+        }),
+      });
+      const ingestData = await ingestRes.json().catch(() => ({}));
+      if (!ingestRes.ok) {
+        throw new Error(ingestData?.error || `Refresh failed: HTTP ${ingestRes.status}`);
+      }
+
+      const summary = ingestData?.summary ?? {};
+      const createdIds: string[] = Array.isArray(summary?.createdArticleIds)
+        ? summary.createdArticleIds.map((id: any) => String(id)).filter(Boolean)
+        : [];
+
+      const filesInserted = Number(summary.filesInserted || 0);
+      const processed = Number(summary.processedEmails || 0);
+      const duplicates = Number(summary.duplicates || 0);
+      const pdfUploads = Number(summary.pdfUploads || 0);
+      const attachmentPdfUploads = Number(summary.attachmentPdfUploads || 0);
+      const bodyPdfUploads = Number(summary.bodyPdfUploads || 0);
+      const detailParts: string[] = [];
+      if (attachmentPdfUploads) {
+        detailParts.push(
+          `${attachmentPdfUploads} attachment PDF${attachmentPdfUploads === 1 ? "" : "s"}`
+        );
+      }
+      if (bodyPdfUploads) {
+        detailParts.push(
+          `${bodyPdfUploads} body PDF${bodyPdfUploads === 1 ? "" : "s"}`
+        );
+      }
+      const detailLabel = detailParts.length ? ` (${detailParts.join(" + ")})` : "";
+
+      const statusMessage = `Loaded ${filesInserted} file${filesInserted === 1 ? "" : "s"} (${pdfUploads} PDF)${detailLabel} from ${processed} email${processed === 1 ? "" : "s"}. Skipped ${duplicates} duplicate${duplicates === 1 ? "" : "s"}.`;
+      setRefreshStatus(statusMessage);
+
+      if (createdIds.length > 0) {
+        await startSummarizeJob(createdIds);
+        setRefreshStatus(
+          `${statusMessage} Summarizing ${createdIds.length} new PDF${createdIds.length === 1 ? "" : "s"}…`
+        );
+      } else {
+        setRefreshStatus("All Articles Summarized");
+        setTimeout(() => {
+          setRefreshStatus(null);
+          setRefreshPhaseActive(false);
+        }, 5000);
+      }
+
+      await loadArticles({ silent: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to refresh.";
       setRefreshError(message);
+      setRefreshStatus(null);
+      setRefreshPhaseActive(false);
     } finally {
       setRefreshBusy(false);
     }
@@ -708,18 +863,6 @@ export default function NewsPage() {
     void loadArticles();
   }, [loadArticles]);
 
-  // Derived filter data
-  const allAuthors = Array.from(
-    new Set(
-      items
-        .map((i) => i.author)
-        .filter(
-          (a): a is string =>
-            typeof a === "string" && a.trim().length > 0
-        )
-    )
-  ).sort((a, b) => a.localeCompare(b));
-
   const tickerFilterTokens = tickerFilterInput
     .split(/[,\s]+/)
     .map((t) => t.trim().toUpperCase())
@@ -729,7 +872,7 @@ export default function NewsPage() {
     // Timeframe filter
     let withinTimeframe = true;
     const timeMs = new Date(item.dateISO).getTime();
-    if (!Number.isNaN(timeMs)) {
+    if (!Number.isNaN(timeMs) && timeframe !== "All") {
       const now = Date.now();
       const diff = now - timeMs;
       const dayMs = 24 * 60 * 60 * 1000;
@@ -742,13 +885,6 @@ export default function NewsPage() {
       withinTimeframe = diff <= maxDiff;
     }
     if (!withinTimeframe) return false;
-
-    // Author filter
-    if (selectedAuthors.length > 0) {
-      if (!item.author || !selectedAuthors.includes(item.author)) {
-        return false;
-      }
-    }
 
     // Ticker filter
     if (tickerFilterTokens.length > 0) {
@@ -781,94 +917,69 @@ export default function NewsPage() {
     return true;
   });
 
-  const timeframeItems = useMemo(() => {
-    const now = Date.now();
-    const dayMs = 24 * 60 * 60 * 1000;
-    let maxDiff = 7 * dayMs;
-    if (timeframe === "1D") maxDiff = 1 * dayMs;
-    else if (timeframe === "1W") maxDiff = 7 * dayMs;
-    else if (timeframe === "1M") maxDiff = 30 * dayMs;
-    else if (timeframe === "1Y") maxDiff = 365 * dayMs;
-
-    return items.filter((item) => {
-      const ts = new Date(item.dateISO).getTime();
-      if (Number.isNaN(ts)) return false;
-      return now - ts <= maxDiff;
-    });
-  }, [items, timeframe]);
-
-  const timeframeReadCount = timeframeItems.filter((item) => item.viewed).length;
-  const timeframeTotal = timeframeItems.length;
+  const timeframeReadCount = filteredItems.filter((item) => item.viewed).length;
+  const timeframeTotal = filteredItems.length;
   const timeframeLabels: Record<TimeframeOption, string> = {
     "1D": "Today",
     "1W": "This Week",
     "1M": "This Month",
     "1Y": "This Year",
+    "All": "All Time",
   };
   const timeframeLabel = timeframeLabels[timeframe];
-  const subtitleDefault = `(${timeframeReadCount}/${timeframeTotal} Articles read for ${timeframeLabel})`;
-
   const refreshButtonLabel = loadingActive
     ? LOADING_STATES[processingStep % LOADING_STATES.length]
     : "Refresh";
 
-  // Drive the subtitle with live job status, then revert to default after a short delay
+  const loadingDots = LOADING_STATES[processingStep % LOADING_STATES.length];
+
+  const summarizingJob =
+    activeJob && (activeJob.type === "summarize" || activeJob.type === "resummarize");
+  const summarizingStatus = (() => {
+    if (!summarizingJob) return null;
+    const total = Math.max(activeJob?.total ?? 0, 0);
+    const completed = Math.max(activeJob?.completed ?? 0, 0);
+    if (activeJob?.status === "completed") return "All Articles Summarized";
+    if (total > 0) {
+      if (completed >= total) return "All Articles Summarized";
+      if (completed > 0) return `(${completed}/${total}) Articles Summarized`;
+      return `Summarizing ${total} Articles`;
+    }
+    return "Summarizing Articles";
+  })();
+
   useEffect(() => {
-    if (refreshBusy && !activeJob) {
-      setSubtitleOverride("Finding new articles…");
-      return;
+    if (!refreshPhaseActive) return;
+    if (summarizingJob && activeJob?.status === "completed") {
+      setRefreshStatus("All Articles Summarized");
+      const id = setTimeout(() => {
+        setRefreshStatus(null);
+        setRefreshPhaseActive(false);
+      }, 5000);
+      return () => clearTimeout(id);
     }
-    if (activeJob?.type === "refresh") {
-      if (activeJob.status === "failed") {
-        setSubtitleOverride(activeJob.lastError || "Refresh failed.");
-        const t = window.setTimeout(() => setSubtitleOverride(null), 5000);
-        return () => window.clearTimeout(t);
-      }
-      if (activeJob.status === "running") {
-        const total = Math.max(activeJob.total ?? 0, 0);
-        if (!total) {
-          setSubtitleOverride(activeJob.summary || "Finding new articles…");
-          return;
-        }
-        if (activeJob.completed >= total) {
-          setSubtitleOverride(`All Articles Summarized`);
-          return;
-        }
-        if (activeJob.completed === 0) {
-          setSubtitleOverride(`${total} Articles found`);
-          return;
-        }
-        setSubtitleOverride(`Summarizing articles (${activeJob.completed}/${total})`);
-        return;
-      }
-      if (activeJob.status === "completed") {
-        setSubtitleOverride(activeJob.summary || "All Articles Summarized");
-        const t = window.setTimeout(() => setSubtitleOverride(null), 5000);
-        return () => window.clearTimeout(t);
-      }
-    }
-    if (refreshError) {
-      setSubtitleOverride(refreshError);
-      const t = window.setTimeout(() => setSubtitleOverride(null), 5000);
-      return () => window.clearTimeout(t);
-    }
-    setSubtitleOverride(null);
-  }, [activeJob, refreshBusy, refreshError, loadingActive]);
+    return;
+  }, [summarizingJob, activeJob, refreshPhaseActive]);
+
+  const defaultSubtitle = `(${timeframeReadCount}/${timeframeTotal} Articles read for ${timeframeLabel})`;
+  const computedSubtitle =
+    (refreshPhaseActive && ((refreshBusy && !activeJob && `Loading${loadingDots}`) || summarizingStatus || refreshStatus || refreshError)) ||
+    defaultSubtitle;
 
   return (
     <main className="min-h-screen bg-neutral-900 text-white px-6 py-8">
       <Header
         title="News"
-        subtitle={subtitleOverride ?? subtitleDefault}
+        subtitle={computedSubtitle}
         rightSlot={
-          <div className="flex items-start gap-2">
+          <div className="flex items-start gap-3">
             {/* Refresh button + status */}
             <button
               type="button"
               onClick={handleRefreshNews}
               disabled={refreshBusy || jobRunning}
               className={`${actionButtonClass} ${
-                jobRunning && activeJob?.type === "refresh"
+                jobRunning
                   ? "border-[var(--highlight-400)] text-[var(--highlight-100)]"
                   : ""
               }`}
@@ -895,7 +1006,7 @@ export default function NewsPage() {
                       Timeframe
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                      {(["1D", "1W", "1M", "1Y"] as TimeframeOption[]).map(
+                      {(["1D", "1W", "1M", "1Y", "All"] as TimeframeOption[]).map(
                         (tf) => (
                           <button
                             key={tf}
@@ -912,116 +1023,99 @@ export default function NewsPage() {
                         )
                       )}
                     </div>
-                    <label className="mt-2 flex items-center gap-2 text-[11px] text-neutral-300">
+                  </div>
+
+                  {/* Read status */}
+                  <div className="mb-3">
+                    <div className="mb-1 text-[11px] uppercase tracking-wide text-neutral-500">
+                      Read status
+                    </div>
+                    <div className="inline-flex rounded-md border border-neutral-700 bg-neutral-950 p-0.5">
+                      {[
+                        { key: "unread", label: "Unread" },
+                        { key: "all", label: "All News" },
+                      ].map((option) => {
+                        const isUnread = option.key === "unread";
+                        const active = showUnreadOnly === isUnread;
+                        return (
+                          <button
+                            key={option.key}
+                            type="button"
+                            onClick={() => setShowUnreadOnly(isUnread)}
+                            className={`px-3 py-1 text-[11px] font-medium rounded ${active ? "bg-[var(--highlight-500)]/15 text-[var(--highlight-50)] border border-[var(--highlight-400)]" : "text-neutral-300 border border-transparent hover:border-neutral-700"}`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="my-2 border-t border-neutral-800" />
+
+                  {/* Mentions */}
+                  <div className="space-y-2">
+                    <div className="text-[11px] uppercase tracking-wide text-neutral-500">
+                      Mentions
+                    </div>
+                    <label className="flex items-center gap-2 text-[11px] text-neutral-200">
                       <input
                         type="checkbox"
-                        className="h-3 w-3 rounded border-neutral-600 bg-neutral-900"
-                        checked={showUnreadOnly}
-                        onChange={(e) => setShowUnreadOnly(e.target.checked)}
+                        className="h-3 w-3 rounded border-neutral-600 bg-neutral-900 accent-[var(--good-400)]"
+                        checked={filterPortfolioMatches}
+                        onChange={(e) => setFilterPortfolioMatches(e.target.checked)}
                       />
-                      <span>Unread only</span>
+                      <span>Portfolio</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-[11px] text-neutral-200">
+                      <input
+                        type="checkbox"
+                        className="h-3 w-3 rounded border-neutral-600 bg-neutral-900 accent-[var(--good-400)]"
+                        checked={filterWatchlistMatches}
+                        onChange={(e) => setFilterWatchlistMatches(e.target.checked)}
+                      />
+                      <span>Watchlist</span>
                     </label>
                   </div>
 
-                  {/* Author filter */}
-                  <div className="mb-3 border-t border-neutral-800 pt-2">
-                    <div className="mb-1 text-[11px] uppercase tracking-wide text-neutral-500">
-                      Author
-                    </div>
-                    {allAuthors.length === 0 ? (
-                      <p className="text-[11px] text-neutral-500">
-                        No authors available yet.
-                      </p>
-                    ) : (
-                      <div className="max-h-28 space-y-1 overflow-y-auto">
-                        {allAuthors.map((name) => {
-                          const checked =
-                            selectedAuthors.includes(name);
-                          return (
-                            <label
-                              key={name}
-                              className="flex items-center gap-2 text-[11px] text-neutral-200"
-                            >
-                              <input
-                                type="checkbox"
-                                className="h-3 w-3 rounded border-neutral-600 bg-neutral-900"
-                                checked={checked}
-                                onChange={() =>
-                                  setSelectedAuthors((prev) =>
-                                    checked
-                                      ? prev.filter((a) => a !== name)
-                                      : [...prev, name]
-                                  )
-                                }
-                              />
-                              <span className="truncate">{name}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                  <div className="my-2 border-t border-neutral-800" />
 
                   {/* Ticker filter */}
-                  <div className="border-t border-neutral-800 pt-2">
-                    <div className="mb-1 text-[11px] uppercase tracking-wide text-neutral-500">
+                  <div className="space-y-1">
+                    <div className="text-[11px] uppercase tracking-wide text-neutral-500">
                       Ticker
                     </div>
                     <input
                       type="text"
                       value={tickerFilterInput}
                       onChange={(e) =>
-                        setTickerFilterInput(e.target.value)
+                        setTickerFilterInput(e.target.value.toUpperCase())
                       }
                       placeholder="e.g. CENX, AA"
                       className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:border-[var(--highlight-400)]"
                     />
-                    <p className="mt-1 text-[10px] text-neutral-500">
+                    <p className="text-[10px] text-neutral-500">
                       Show articles mentioning any of these tickers.
                     </p>
                   </div>
-                  <div className="mt-3 border-t border-neutral-800 pt-2">
-                    <div className="mb-1 text-[11px] uppercase tracking-wide text-neutral-500">
-                      Mentions
-                    </div>
-                    <div className="space-y-1 text-[11px] text-neutral-300">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          className="h-3 w-3 rounded border-neutral-600 bg-neutral-900"
-                          checked={filterPortfolioMatches}
-                          onChange={(e) => setFilterPortfolioMatches(e.target.checked)}
-                        />
-                        <span>Portfolio tickers</span>
-                      </label>
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          className="h-3 w-3 rounded border-neutral-600 bg-neutral-900"
-                          checked={filterWatchlistMatches}
-                          onChange={(e) => setFilterWatchlistMatches(e.target.checked)}
-                        />
-                        <span>Watchlist tickers</span>
-                      </label>
-                    </div>
-                  </div>
-                  <div className="mt-3 border-t border-neutral-800 pt-2">
-                    <div className="flex items-center justify-between">
-                      <button
-                        type="button"
-                        onClick={handleDatabaseAccess}
-                        className="text-[11px] underline text-neutral-300 hover:text-white"
-                      >
-                        View Database
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSortOpen(false)}
-                        className="rounded-lg border border-neutral-600 px-3 py-1 text-[11px] text-neutral-200 hover:border-white"
-                      >
-                        Close
-                      </button>
-                    </div>
+
+                  <div className="my-3 border-t border-neutral-800" />
+
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={handleDatabaseAccess}
+                      className="text-[11px] underline text-neutral-300 hover:text-white"
+                    >
+                      View Database
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSortOpen(false)}
+                      className="rounded-lg border border-neutral-600 px-3 py-1 text-[11px] text-neutral-200 hover:border-[var(--highlight-400)] hover:text-[var(--highlight-100)]"
+                    >
+                      Close
+                    </button>
                   </div>
                 </div>
               )}
@@ -1066,9 +1160,19 @@ export default function NewsPage() {
                 qaState={qaState}
                 onToggleOpen={() => {
                   const willOpen = !open;
-                  setOpenId(willOpen ? item.id : null);
-                  if (!willOpen && !item.viewed) {
-                    void markViewed(item.id);
+                  if (willOpen) {
+                    if (openId && openId !== item.id) {
+                      const prev = items.find((it) => it.id === openId);
+                      if (prev && !prev.viewed) {
+                        void markViewed(prev.id);
+                      }
+                    }
+                    setOpenId(item.id);
+                  } else {
+                    setOpenId(null);
+                    if (!item.viewed) {
+                      void markViewed(item.id);
+                    }
                   }
                 }}
                 onToggleQa={() => toggleQa(item.id)}

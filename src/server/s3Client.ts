@@ -1,9 +1,45 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
-const bucket = process.env.S3_BUCKET;
-const region = process.env.S3_REGION || "us-east-1";
+const DEFAULT_REGION = "us-east-1";
 
-export const s3Enabled = !!bucket;
+function getBucket() {
+  const bucket = process.env.S3_BUCKET;
+  s3Enabled = !!bucket;
+  return bucket;
+}
+
+function getRegion() {
+  return process.env.S3_REGION || DEFAULT_REGION;
+}
+
+function getConfig() {
+  const bucket = getBucket();
+  return {
+    bucket,
+    region: getRegion(),
+  };
+}
+
+export let s3Enabled = false;
+
+function refreshS3Enabled() {
+  s3Enabled = !!getBucket();
+  return s3Enabled;
+}
+
+refreshS3Enabled();
+
+if (!s3Enabled) {
+  // In Next dev/turbopack env vars may land after module import; re-check briefly.
+  let refreshAttempts = 0;
+  const refreshTimer = setInterval(() => {
+    refreshAttempts += 1;
+    if (refreshS3Enabled() || refreshAttempts > 50) {
+      clearInterval(refreshTimer);
+    }
+  }, 200);
+  refreshTimer.unref?.();
+}
 
 type PutParams = {
   key: string;
@@ -13,10 +49,10 @@ type PutParams = {
   metadata?: Record<string, string>;
 };
 
-export function getS3Client() {
-  if (!s3Enabled) throw new Error("S3 not configured");
+export function getS3Client(config = getConfig()) {
+  if (!config.bucket) throw new Error("S3 not configured");
   return new S3Client({
-    region,
+    region: config.region,
     credentials: process.env.S3_ACCESS_KEY_ID
       ? {
           accessKeyId: process.env.S3_ACCESS_KEY_ID,
@@ -27,9 +63,10 @@ export function getS3Client() {
 }
 
 export async function getObjectBuffer(key: string): Promise<Buffer | null> {
-  if (!s3Enabled) return null;
-  const client = getS3Client();
-  const res = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  const config = getConfig();
+  if (!config.bucket) return null;
+  const client = getS3Client(config);
+  const res = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
   const chunks: Uint8Array[] = [];
   const stream = res.Body;
   if (!stream) return null;
@@ -60,13 +97,14 @@ function buildMetadata(meta?: Record<string, string>) {
 }
 
 export async function putObjectBuffer(params: PutParams) {
-  if (!s3Enabled) return;
-  const client = getS3Client();
+  const config = getConfig();
+  if (!config.bucket) return;
+  const client = getS3Client(config);
   const Tagging = buildTagging(params.tags);
   const Metadata = buildMetadata(params.metadata);
   await client.send(
     new PutObjectCommand({
-      Bucket: bucket,
+      Bucket: config.bucket,
       Key: params.key,
       Body: params.body,
       ContentType: params.contentType,
@@ -77,12 +115,13 @@ export async function putObjectBuffer(params: PutParams) {
 }
 
 export async function deleteObject(key: string) {
-  if (!s3Enabled) return;
-  const client = getS3Client();
+  const config = getConfig();
+  if (!config.bucket) return;
+  const client = getS3Client(config);
   try {
     await client.send(
       new DeleteObjectCommand({
-        Bucket: bucket,
+        Bucket: config.bucket,
         Key: key,
       })
     );

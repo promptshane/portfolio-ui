@@ -54,6 +54,11 @@ export default function MomentumDisplay({
   const [hKey, setHKey] = useState<HorizonKey>("medium");
   const [oneMonthInterval, setOneMonthInterval] = useState<"1h" | "1d">("1h");
   const [colorizePrice, setColorizePrice] = useState(false);
+  const [colorizeHSelection, setColorizeHSelection] = useState<Record<HorizonKey, boolean>>({
+    short: true,
+    medium: true,
+    long: true,
+  });
 
   const data = useMomentumData({ result, range, hKey, hoverI, oneMonthInterval });
 
@@ -82,7 +87,20 @@ export default function MomentumDisplay({
       <MomentumHeaderPanel
         result={result}
         hKey={hKey}
-        setHKey={setHKey}
+        onHorizonClick={(k) => {
+          setHKey(k);
+          if (colorizePrice) {
+            setColorizeHSelection((s) => {
+              const next = { ...s, [k]: !s[k] };
+              if (!Object.values(next).some(Boolean)) {
+                setColorizePrice(false);
+                return { short: false, medium: false, long: false };
+              }
+              return next;
+            });
+          }
+        }}
+        colorizeHSelection={colorizeHSelection}
         indicSelected={indicSelected}
         setIndicSelected={setIndicSelected}
         deriv1Selected={deriv1Selected}
@@ -100,7 +118,15 @@ export default function MomentumDisplay({
         hoveredOHLC={data.hoveredOHLC}
         momentumDotScore={data.momentumDotScore}
         colorizePrice={colorizePrice}
-        onToggleColorize={() => setColorizePrice((v) => !v)}
+        onToggleColorize={() => {
+          setColorizePrice((v) => {
+            const next = !v;
+            if (next) {
+              setColorizeHSelection({ short: true, medium: true, long: true });
+            }
+            return next;
+          });
+        }}
       />
 
       {/* === Momentum price graph + range selector === */}
@@ -136,7 +162,8 @@ export default function MomentumDisplay({
         oneMonthInterval={oneMonthInterval}
         setOneMonthInterval={setOneMonthInterval}
         colorizePrice={colorizePrice}
-        compositeSlice={data.visibleCompositeSlice}
+        colorizeHSelection={colorizeHSelection}
+        compositeSlicesByHorizon={data.visibleCompositeSlicesByHorizon}
       />
     </>
   );

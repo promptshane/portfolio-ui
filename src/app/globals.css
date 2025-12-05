@@ -74,28 +74,6 @@ select,
   --highlight: var(--highlight-500);
 }
 
-/* Violet Scale (Electric / Muted / Dark) */
-.theme-violet {
-  --good-300: #f0dbff;
-  --good-400: #d78dff;
-  --good-500: #b026ff;  /* electric violet */
-
-  --mid-400: #b5a1e8;
-  --mid-500: #9b84d6;
-
-  --bad-400: #2d0f45;
-  --bad-500: #14011f;
-
-  --highlight-400: var(--good-400);
-  --highlight-500: var(--good-500);
-
-  --good: var(--good-500);
-  --bad: var(--bad-500);
-  --mid: var(--mid-500);
-  --highlight: var(--highlight-500);
-}
-
-
 /* Luxe (Gold / Silver / Wine Red) */
 .theme-luxe {
   --good-300: #ffe08a;   /* gold light */
@@ -117,42 +95,16 @@ select,
   --highlight: var(--highlight-500);
 }
 
-/* Colorblind-safe blue / amber / teal */
-.theme-blueAmberTeal {
-  --good-300: #7fd7c7;
-  --good-400: #48c3b3;
-  --good-500: #1fa187;   /* teal */
+.theme-traffic {
+  --good-300: #4ade80;
+  --good-400: #22c55e;
+  --good-500: #16a34a;
 
-  --mid-300: #ffe59c;
-  --mid-400: #ffd052;
-  --mid-500: #f2b705;    /* amber */
+  --mid-400: #fcd34d;
+  --mid-500: #fbbf24;
 
-  --bad-300: #7b90af;
-  --bad-400: #60799e;
-  --bad-500: #4c6a92;    /* blue-gray */
-
-  --highlight-400: var(--good-400);
-  --highlight-500: var(--good-500);
-
-  --good: var(--good-500);
-  --bad: var(--bad-500);
-  --mid: var(--mid-500);
-  --highlight: var(--highlight-500);
-}
-
-/* Crimson / Violet / Mint */
-.theme-crimsonVioletMint {
-  --good-300: #8ef0be;
-  --good-400: #5fdc9c;
-  --good-500: #2ecc71;   /* mint */
-
-  --mid-300: #bba9ff;
-  --mid-400: #9b85ff;
-  --mid-500: #7b61ff;    /* violet */
-
-  --bad-300: #f07f86;
-  --bad-400: #df4a52;
-  --bad-500: #c81d25;    /* crimson */
+  --bad-400: #f87171;
+  --bad-500: #ef4444;
 
   --highlight-400: var(--good-400);
   --highlight-500: var(--good-500);

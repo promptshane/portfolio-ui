@@ -16,7 +16,8 @@ type Props = {
 
   // horizon picker
   hKey: HorizonKey;
-  setHKey: (k: HorizonKey) => void;
+  onHorizonClick: (k: HorizonKey) => void;
+  colorizeHSelection: Record<HorizonKey, boolean>;
 
   // indicator + derivative selections
   indicSelected: Record<IndicKey, boolean>;
@@ -59,7 +60,7 @@ type Props = {
 export default function MomentumHeaderPanel({
   result,
   hKey,
-  setHKey,
+  onHorizonClick,
   indicSelected,
   setIndicSelected,
   deriv1Selected,
@@ -78,6 +79,7 @@ export default function MomentumHeaderPanel({
   momentumDotScore,
   colorizePrice,
   onToggleColorize,
+  colorizeHSelection,
 }: Props) {
   return (
     <div className="bg-neutral-800 rounded-2xl p-5 border border-neutral-700">
@@ -138,18 +140,21 @@ export default function MomentumHeaderPanel({
           {/* Short/Medium/Long segmented control (vertical stack, per mock) */}
           <div className="flex flex-col rounded-2xl overflow-hidden border border-neutral-600 bg-black/80">
             {(["short", "medium", "long"] as HorizonKey[]).map((k, idx) => {
-              const activeBtn = hKey === k;
+              const selected = colorizePrice ? colorizeHSelection[k] : hKey === k;
               const label = k === "short" ? "Short" : k === "long" ? "Long" : "Medium";
               const radius = idx === 0 ? "rounded-t-2xl" : idx === 2 ? "rounded-b-2xl" : "";
               return (
                 <button
                   key={k}
                   type="button"
-                  onClick={() => setHKey(k)}
-                  className={`px-4 py-2 w-[92px] text-sm border-neutral-600 ${radius} ${
-                    activeBtn ? "bg-white text-black" : "text-neutral-200 hover:bg-neutral-800"
-                  } ${idx > 0 ? "border-t" : ""}`}
+                  onClick={() => onHorizonClick(k)}
+                  className={`px-4 py-2 w-[92px] text-sm border ${radius} ${
+                    selected
+                      ? "border-white text-white font-semibold"
+                      : "border-neutral-700 text-neutral-400"
+                  } bg-black ${idx > 0 ? "border-t" : ""}`}
                   title={`${label} horizon`}
+                  aria-pressed={selected}
                 >
                   {label}
                 </button>

@@ -44,6 +44,10 @@ export type ApiArticle = {
   actionsJson: string | null;
   tickersJson: string | null;
   discountJson?: string | null;
+  storageDecision?: string | null;
+  qualityTag?: string | null;
+  qualityNote?: string | null;
+  sourceEmail?: string | null;
   summarizedAt: string | null;
   positionTickers?: string[]; // Symbols derived from positions/allocations attached to the article
   viewed?: boolean;
@@ -73,7 +77,7 @@ export type QaUIState = {
 };
 
 // Available timeframe filters for the News page
-export type TimeframeOption = "1D" | "1W" | "1M" | "1Y";
+export type TimeframeOption = "1D" | "1W" | "1M" | "1Y" | "All";
 
 export type NewsJobInfo = {
   id: number;

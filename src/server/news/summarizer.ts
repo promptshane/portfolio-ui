@@ -2,7 +2,7 @@
 import OpenAI from "openai";
 import { toFile } from "openai/uploads";
 import prisma from "@/lib/prisma";
-import { readPdfBuffer, getArticleById } from "./store";
+import { deletePdf, readPdfBuffer, getArticleById } from "./store";
 
 const FMP_BASE = "https://financialmodelingprep.com/stable";
 const fxCache = new Map<string, number>();
@@ -60,6 +60,20 @@ export type QaAnswer = {
   answer: string;
 };
 
+export type SummaryQualityTag = "Good" | "Error";
+
+export type SummaryResult =
+  | {
+      status: "stored";
+      decision: "Store";
+      summary: SummaryPayload;
+      reason: string;
+      quality: SummaryQualityTag;
+      errorNote: string | null;
+    }
+  | { status: "deleted"; decision: "Delete"; reason: string }
+  | { status: "missing"; reason: string };
+
 type ArticleModelInput =
   | { kind: "file"; fileId: string }
   | { kind: "text"; text: string };
@@ -94,61 +108,80 @@ async function prepareArticleModelInput(
 const SUMMARY_PROMPT = `
 You are a financial research summarization assistant. A user will provide an investment research document (PDF or plain text) as an input.
 
-Read the entire document and produce a concise summary in the following JSON format:
+Decide if the document has any investing/news informational value. If it is junk, empty, only a forward header, or purely FYI/administrative, mark it for deletion. Otherwise store and summarize it.
+
+Return a single JSON object with this exact shape:
 
 {
-  "title": "",
-  "date_published": "",
-  "author": "",
-  "summary": "",
-  "key_points": [],
-  "actions": [
-    {
-      "description": "",
-      "ticker": ""
-    }
-  ],
-  "ongoing_actions": [
-    {
-      "description": "",
-      "ticker": ""
-    }
-  ],
-  "tickers": [
-    {
-      "symbol": "",
-      "name": "",
-      "importance_rank": 1,
-      "has_explicit_action": true
-    }
-  ],
-  "ongoing_tickers": [
-    {
-      "symbol": "",
-      "name": "",
-      "importance_rank": 1,
-      "has_explicit_action": false
-    }
-  ],
-  "positions": [
-    {
-      "symbol": "",
-      "name": "",
-      "recommendation": "",
-      "allocation": null,
-      "entry_date": "",
-      "entry_price": null,
-      "current_price": null,
-      "return_pct": null,
-      "fair_value": null,
-      "stop_price": null,
-      "notes": "",
-      "as_of": ""
-    }
-  ]
+  "storage_decision": "Store",
+  "reason": "",
+  "quality_tag": "Good",
+  "error_note": "",
+  "summary": {
+    "title": "",
+    "date_published": "",
+    "author": "",
+    "summary": "",
+    "key_points": [],
+    "actions": [
+      {
+        "description": "",
+        "ticker": ""
+      }
+    ],
+    "ongoing_actions": [
+      {
+        "description": "",
+        "ticker": ""
+      }
+    ],
+    "tickers": [
+      {
+        "symbol": "",
+        "name": "",
+        "importance_rank": 1,
+        "has_explicit_action": true
+      }
+    ],
+    "ongoing_tickers": [
+      {
+        "symbol": "",
+        "name": "",
+        "importance_rank": 1,
+        "has_explicit_action": false
+      }
+    ],
+    "positions": [
+      {
+        "symbol": "",
+        "name": "",
+        "recommendation": "",
+        "allocation": null,
+        "entry_date": "",
+        "entry_price": null,
+        "current_price": null,
+        "return_pct": null,
+        "fair_value": null,
+        "stop_price": null,
+        "notes": "",
+        "as_of": ""
+      }
+    ]
+  }
 }
 
-Rules:
+Rules for "storage_decision" and "reason":
+- Use "Store" if the document contains useful investing/news information. Use "Delete" if it is empty, junk, a forward/headers-only message, or FYI-only with no actionable or informative content.
+- "reason": Short justification (<= 200 characters) for the decision.
+- If "storage_decision" is "Delete": Do not invent details. Leave all fields inside "summary" empty ("" / [] / null). Set "quality_tag" to "Good" and "error_note" to "".
+
+Rules for "quality_tag" and "error_note":
+- Default to "Good" when the document can be summarized normally.
+- Use "Error" only when the document has useful content but also contains a critical issue (for example: missing or cut-off pages, corrupted/unreadable scans, or other severe fidelity problems). Still provide the best possible summary from available text.
+- When "quality_tag" is "Error", set "error_note" to a single concise sentence (<= 160 characters) describing the critical issue.
+- When "quality_tag" is "Good", set "error_note" to "".
+
+Rules for "summary" when storage_decision is "Store":
 - "title": Use the document title or a short, descriptive title.
 - "date_published": Use the publication date and time of the research article as written near the title (for example: "Nov 12, 2025 3:00 PM"). 
   - Prefer the date/time explicitly associated with the publication ("Published", "Publication Date", issue header, etc.).
@@ -159,7 +192,6 @@ Rules:
 - "summary": 2-4 sentences capturing the core narrative of the article.
 - "key_points": 3-7 bullet points (as plain strings) describing the most important ideas or arguments.
 - "actions": NEW/UPDATED explicit investment actions in this article (what changed versus prior guidance). Examples: Buy, Sell, Hold, Upgrade, Downgrade, Watch, Take profits, Trim, Raise/Lower price target. Each action should have:
- - "actions": NEW/UPDATED explicit investment actions in this article (what changed versus prior guidance). Examples: Buy, Sell, Hold, Upgrade, Downgrade, Watch, Take profits, Trim, Raise/Lower price target. Each action should have:
     - "description": Short human-readable description (for example: "Buy Pfizer (PFE) under $60 and hold for the long term.")
     - "ticker": The related ticker symbol if clearly associated (for example "PFE"), otherwise use an empty string "".
   If there are no clear new/updated explicit actions, set "actions" to an empty list [].
@@ -585,8 +617,17 @@ function extractTextFromResponse(response: any): string | null {
 
 export async function generateAndStoreSummary(
   articleId: string
-): Promise<SummaryPayload> {
-  const articleInput = await prepareArticleModelInput(articleId);
+): Promise<SummaryResult> {
+  let articleInput: ArticleModelInput;
+  try {
+    articleInput = await prepareArticleModelInput(articleId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Article not found.";
+    if (message.includes("NewsArticle not found")) {
+      return { status: "missing", reason: message };
+    }
+    throw err;
+  }
 
   const contentBlocks: Array<
     | { type: "input_file"; file_id: string }
@@ -623,7 +664,45 @@ export async function generateAndStoreSummary(
     throw new Error("Model did not return valid JSON for summary.");
   }
 
-  const summary = await normaliseSummary(parsed);
+  const decisionRaw =
+    typeof parsed?.storage_decision === "string"
+      ? parsed.storage_decision
+      : typeof parsed?.news_value === "string"
+      ? parsed.news_value
+      : "";
+  const decisionNormalized = decisionRaw.trim().toUpperCase();
+  const decision: "Store" | "Delete" =
+    decisionNormalized === "DELETE" || decisionNormalized === "DISCARD" ? "Delete" : "Store";
+  const reason = typeof parsed?.reason === "string" ? parsed.reason.trim() : "";
+  const qualityRaw = typeof parsed?.quality_tag === "string" ? parsed.quality_tag : "";
+  let quality: SummaryQualityTag =
+    qualityRaw.trim().toUpperCase() === "ERROR" ? "Error" : "Good";
+  const errorNoteRaw = typeof parsed?.error_note === "string" ? parsed.error_note.trim() : "";
+  if (quality === "Good" && errorNoteRaw) {
+    quality = "Error";
+  }
+  const errorNote = quality === "Error" ? errorNoteRaw || "Critical issue detected in PDF content." : "";
+
+  const summaryPayloadRaw =
+    parsed && typeof parsed.summary === "object" && parsed.summary !== null
+      ? parsed.summary
+      : parsed;
+
+  if (decision === "Delete") {
+    try {
+      await deletePdf(articleId);
+    } catch (err) {
+      console.error("Failed to delete PDF tagged for deletion", articleId, err);
+    }
+
+    return {
+      status: "deleted",
+      decision,
+      reason: reason || "Model marked this document as having no news value.",
+    };
+  }
+
+  const summary = await normaliseSummary(summaryPayloadRaw);
 
   const buildDiscountPayload = () => {
     const payload: {
@@ -676,6 +755,9 @@ export async function generateAndStoreSummary(
       keyPointsJson: JSON.stringify(summary.key_points),
       actionsJson: JSON.stringify(summary.actions),
       tickersJson: JSON.stringify(summary.tickers),
+      storageDecision: decision,
+      qualityTag: quality,
+      qualityNote: errorNote || null,
       discountJson: (() => {
         const payload = buildDiscountPayload();
         return payload ? JSON.stringify(payload) : null;
@@ -727,7 +809,14 @@ export async function generateAndStoreSummary(
     console.error("Discount position persistence failed (continuing):", err);
   }
 
-  return summary;
+  return {
+    status: "stored",
+    decision,
+    summary,
+    reason: reason || "Model marked this document as worth storing.",
+    quality,
+    errorNote: errorNote || null,
+  };
 }
 
 export async function answerQuestionsForArticle(

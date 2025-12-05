@@ -45,9 +45,6 @@ export default function NotesPage() {
   const [followingHandles, setFollowingHandles] = useState<Set<string>>(
     new Set()
   );
-  const [friendHandles, setFriendHandles] = useState<Set<string>>(
-    new Set()
-  );
   const [includeWatchlist, setIncludeWatchlist] = useState(false);
   const [includePortfolio, setIncludePortfolio] = useState(false);
   const [watchlistTickers, setWatchlistTickers] = useState<Set<string>>(
@@ -157,18 +154,7 @@ export default function NotesPage() {
             .map((u) => u.handle?.toLowerCase())
             .filter(Boolean) as string[]
         );
-        const followerSet = new Set(
-          (data.followers ?? [])
-            .map((u) => u.handle?.toLowerCase())
-            .filter(Boolean) as string[]
-        );
-        const friendsSet = new Set(
-          Array.from(followingSet).filter((handle) =>
-            followerSet.has(handle)
-          )
-        );
         setFollowingHandles(followingSet);
-        setFriendHandles(friendsSet);
       } catch (err) {
         console.error("Failed to load social graph for Notes", err);
       }
@@ -469,12 +455,6 @@ export default function NotesPage() {
           handlesLower.some((handle) => followingHandles.has(handle));
         if (!hasFollowing) return false;
       }
-      if (sourceFilter === "friends") {
-        const hasFriend = handlesLower.some((handle) =>
-          friendHandles.has(handle)
-        );
-        if (!hasFriend) return false;
-      }
 
       const articleTickers = (item.article.tickers ?? []).map((t) =>
         t.toUpperCase()
@@ -515,7 +495,6 @@ export default function NotesPage() {
     watchlistTickers,
     portfolioTickers,
     followingHandles,
-    friendHandles,
   ]);
 
   const sortedItems = [...filteredItems].sort((a, b) => {

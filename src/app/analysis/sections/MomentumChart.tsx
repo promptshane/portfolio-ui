@@ -7,6 +7,7 @@ import { IndicKey, RangeKey, toPathXY, KeyStats, CompanyProfile } from "../share
 /** Local extension so we can add ADX + intraday ranges without touching shared types yet */
 type ExtIndicKey = IndicKey | "adx";
 type ExtRangeKey = RangeKey | "1D" | "1W";
+type HorizonKey = "short" | "medium" | "long";
 
 type VisibleRange = { start: number; end: number };
 
@@ -71,7 +72,8 @@ type Props = {
   oneMonthInterval: "1h" | "1d";
   setOneMonthInterval: (v: "1h" | "1d") => void;
   colorizePrice: boolean;
-  compositeSlice: number[];
+  colorizeHSelection: Record<HorizonKey, boolean>;
+  compositeSlicesByHorizon: Record<HorizonKey, number[]>;
 };
 
 function clampToInterval(date: Date, minutes: number) {
@@ -208,7 +210,8 @@ export default function MomentumChart({
   oneMonthInterval,
   setOneMonthInterval,
   colorizePrice,
-  compositeSlice,
+  colorizeHSelection,
+  compositeSlicesByHorizon,
 }: Props) {
   const extRange = range as ExtRangeKey;
   const [showStats, setShowStats] = useState(false);
@@ -405,10 +408,8 @@ export default function MomentumChart({
 
             {colorizePrice &&
               momentumGeom &&
-              compositeSlice.length === visiblePriceSlice.length &&
               visiblePriceSlice.length > 1 &&
               (() => {
-                const segments: { color: string; d: string }[] = [];
                 const colorForScore = (v: number) => {
                   const score = (v + 100) / 2;
                   if (score >= 67) return "var(--good-400)";
@@ -416,41 +417,58 @@ export default function MomentumChart({
                   return "var(--bad-400)";
                 };
 
-                const pts = visiblePriceSlice.map((p, i) => ({
-                  x: momentumGeom.X(i),
-                  y: momentumGeom.Y(p),
-                  color: colorForScore(compositeSlice[i] ?? 0),
-                }));
+                const styles: Record<HorizonKey, { strokeWidth: number; dash?: string; opacity: number }> = {
+                  short: { strokeWidth: 1.5, opacity: 0.95 },
+                  medium: { strokeWidth: 1.2, dash: "6 4", opacity: 0.9 },
+                  long: { strokeWidth: 1.1, dash: "3 3", opacity: 0.85 },
+                };
 
-                let currentColor = pts[0].color;
-                let d = `M ${pts[0].x} ${pts[0].y}`;
-                for (let i = 1; i < pts.length; i++) {
-                  const { x, y, color } = pts[i];
-                  if (color === currentColor) {
-                    d += ` L ${x} ${y}`;
-                  } else {
-                    segments.push({ color: currentColor, d });
-                    d = `M ${pts[i - 1].x} ${pts[i - 1].y} L ${x} ${y}`;
-                    currentColor = color;
+                const renderForHorizon = (h: HorizonKey) => {
+                  const slice = compositeSlicesByHorizon[h];
+                  if (!slice || slice.length !== visiblePriceSlice.length) return null;
+
+                  const pts = visiblePriceSlice.map((p, i) => ({
+                    x: momentumGeom.X(i),
+                    y: momentumGeom.Y(p),
+                    color: colorForScore(slice[i] ?? 0),
+                  }));
+
+                  const segments: { color: string; d: string }[] = [];
+                  let currentColor = pts[0].color;
+                  let d = `M ${pts[0].x} ${pts[0].y}`;
+                  for (let i = 1; i < pts.length; i++) {
+                    const { x, y, color } = pts[i];
+                    if (color === currentColor) {
+                      d += ` L ${x} ${y}`;
+                    } else {
+                      segments.push({ color: currentColor, d });
+                      d = `M ${pts[i - 1].x} ${pts[i - 1].y} L ${x} ${y}`;
+                      currentColor = color;
+                    }
                   }
-                }
-                segments.push({ color: currentColor, d });
+                  segments.push({ color: currentColor, d });
 
-                return (
-                  <g>
-                    {segments.map((seg, idx) => (
-                      <path
-                        key={`seg-${idx}`}
-                        d={seg.d}
-                        fill="none"
-                        stroke={seg.color}
-                        strokeWidth={1.3}
-                        strokeLinejoin="round"
-                        strokeLinecap="round"
-                      />
-                    ))}
-                  </g>
+                  const style = styles[h];
+                  return segments.map((seg, idx) => (
+                    <path
+                      key={`seg-${h}-${idx}`}
+                      d={seg.d}
+                      fill="none"
+                      stroke={seg.color}
+                      strokeWidth={style.strokeWidth}
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                      strokeDasharray={style.dash}
+                      opacity={style.opacity}
+                    />
+                  ));
+                };
+
+                const activeHorizons = (["short", "medium", "long"] as HorizonKey[]).filter(
+                  (h) => colorizeHSelection[h]
                 );
+                if (!activeHorizons.length) return null;
+                return <g>{activeHorizons.map((h) => renderForHorizon(h))}</g>;
               })()}
           </>
         )}

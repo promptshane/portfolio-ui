@@ -99,6 +99,16 @@ async function processSummarizeJob(job: NewsBatchJob) {
 
   let completed = 0;
   let lastError: string | null = null;
+  let deleted = 0;
+  let missing = 0;
+
+  const progressSummary = () => {
+    const extras: string[] = [];
+    if (deleted) extras.push(`deleted ${deleted}`);
+    if (missing) extras.push(`missing ${missing}`);
+    const extrasText = extras.length ? `; ${extras.join(", ")}` : "";
+    return `Summarizing articles (${completed}/${total}${extrasText})`;
+  };
 
   let cursor = 0;
   const worker = async () => {
@@ -106,7 +116,12 @@ async function processSummarizeJob(job: NewsBatchJob) {
       const index = cursor++;
       const articleId = articleIds[index];
       try {
-        await generateAndStoreSummary(articleId);
+        const result = await generateAndStoreSummary(articleId);
+        if (result.status === "deleted") {
+          deleted += 1;
+        } else if (result.status === "missing") {
+          missing += 1;
+        }
       } catch (err) {
         lastError = err instanceof Error ? err.message : "Failed to summarize an article.";
       }
@@ -115,7 +130,7 @@ async function processSummarizeJob(job: NewsBatchJob) {
         where: { id: job.id },
         data: {
           completed,
-          summary: `Summarizing articles (${completed}/${total})`,
+          summary: progressSummary(),
           lastError,
         },
       });
@@ -125,10 +140,20 @@ async function processSummarizeJob(job: NewsBatchJob) {
   const workerCount = Math.min(SUMMARY_CONCURRENCY, articleIds.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
+  const extras: string[] = [];
+  if (deleted) extras.push(`${deleted} deleted`);
+  if (missing) extras.push(`${missing} missing`);
+  const finalSummary = extras.length
+    ? `Summarizing articles (${completed}/${total}; ${extras.join(", ")})`
+    : `Summarizing articles (${completed}/${total})`;
+
   if (lastError) {
-    await markCompleted(job.id, `Summarizing articles (${completed}/${total})`, true, lastError);
+    await markCompleted(job.id, finalSummary, true, lastError);
   } else {
-    await markCompleted(job.id, `All articles summarized (${completed}/${total}).`);
+    await markCompleted(
+      job.id,
+      extras.length ? `All articles processed (${completed}/${total}; ${extras.join(", ")})` : `All articles summarized (${completed}/${total}).`
+    );
   }
 }
 
@@ -148,13 +173,28 @@ async function processRefreshJob(job: NewsBatchJob) {
 
     const articleIds = Array.from(new Set(summary.createdArticleIds ?? []));
     const total = articleIds.length;
+    const baseSummary = (() => {
+      const detailParts: string[] = [];
+      if (summary.attachmentPdfUploads) {
+        detailParts.push(
+          `${summary.attachmentPdfUploads} attachment PDF${summary.attachmentPdfUploads === 1 ? "" : "s"}`
+        );
+      }
+      if (summary.bodyPdfUploads) {
+        detailParts.push(
+          `${summary.bodyPdfUploads} body PDF${summary.bodyPdfUploads === 1 ? "" : "s"}`
+        );
+      }
+      const detailLabel = detailParts.length ? ` (${detailParts.join(" + ")})` : "";
+      return `Found ${summary.filesInserted} file${summary.filesInserted === 1 ? "" : "s"} (${summary.pdfUploads} PDF)${detailLabel}; skipped ${summary.duplicates} duplicate${summary.duplicates === 1 ? "" : "s"}.`;
+    })();
 
     await prisma.newsBatchJob.update({
       where: { id: job.id },
       data: {
         total,
         completed: 0,
-        summary: total ? `Found ${total} articles` : "No new articles found.",
+        summary: total ? `${baseSummary} Summarizing ${total} new PDF${total === 1 ? "" : "s"}…` : `${baseSummary} No new articles found.`,
       },
     });
 
@@ -164,6 +204,16 @@ async function processRefreshJob(job: NewsBatchJob) {
 
     let completed = 0;
     let lastError: string | null = null;
+    let deleted = 0;
+    let missing = 0;
+
+    const progressSummary = () => {
+      const extras: string[] = [];
+      if (deleted) extras.push(`deleted ${deleted}`);
+      if (missing) extras.push(`missing ${missing}`);
+      const extrasText = extras.length ? `; ${extras.join(", ")}` : "";
+      return `Summarizing articles (${completed}/${total}${extrasText})`;
+    };
 
     let cursor = 0;
     const worker = async () => {
@@ -171,7 +221,12 @@ async function processRefreshJob(job: NewsBatchJob) {
         const index = cursor++;
         const articleId = articleIds[index];
         try {
-          await generateAndStoreSummary(articleId);
+          const result = await generateAndStoreSummary(articleId);
+          if (result.status === "deleted") {
+            deleted += 1;
+          } else if (result.status === "missing") {
+            missing += 1;
+          }
         } catch (err) {
           lastError = err instanceof Error ? err.message : "Failed to summarize an article.";
         }
@@ -180,7 +235,7 @@ async function processRefreshJob(job: NewsBatchJob) {
           where: { id: job.id },
           data: {
             completed,
-            summary: `Summarizing articles (${completed}/${total})`,
+            summary: progressSummary(),
             lastError,
           },
         });
@@ -190,10 +245,20 @@ async function processRefreshJob(job: NewsBatchJob) {
     const workerCount = Math.min(SUMMARY_CONCURRENCY, articleIds.length);
     await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
+    const extras: string[] = [];
+    if (deleted) extras.push(`${deleted} deleted`);
+    if (missing) extras.push(`${missing} missing`);
+    const finalSummary = extras.length
+      ? `Summarizing articles (${completed}/${total}; ${extras.join(", ")})`
+      : `Summarizing articles (${completed}/${total})`;
+
     if (lastError) {
-      await markCompleted(job.id, `Summarizing articles (${completed}/${total})`, true, lastError);
+      await markCompleted(job.id, finalSummary, true, lastError);
     } else {
-      await markCompleted(job.id, `All articles summarized (${completed}/${total}).`);
+      await markCompleted(
+        job.id,
+        extras.length ? `All articles processed (${completed}/${total}; ${extras.join(", ")})` : `All articles summarized (${completed}/${total}).`
+      );
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Refresh failed.";
@@ -299,7 +364,8 @@ export async function enqueueRefreshJob(options: {
   replaceExisting?: boolean;
 }) {
   await ensureNoActiveJob(options.userId, options.replaceExisting ?? false);
-  const { combined: senders } = await getAggregatedVerifiedEmailsForUser(options.userId);
+  const aggregated = await getAggregatedVerifiedEmailsForUser(options.userId);
+  const senders = aggregated.selected.length ? aggregated.selected : aggregated.combined;
   if (!senders.length) {
     throw new Error("Add at least one verified sender email in Settings before refreshing.");
   }

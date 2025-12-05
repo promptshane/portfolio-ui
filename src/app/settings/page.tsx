@@ -17,13 +17,7 @@ type OverseerSummary = {
   preferredName?: string | null;
 };
 
-type ThemeKey =
-  | "default"
-  | "icy"
-  | "violet"
-  | "luxe"
-  | "blueAmberTeal"
-  | "crimsonVioletMint";
+type ThemeKey = "default" | "icy" | "luxe" | "traffic";
 
 const THEMES: Array<{
   key: ThemeKey;
@@ -42,24 +36,14 @@ const THEMES: Array<{
     swatches: { good: "#0ea5e9", mid: "#ffffff", bad: "#ec4899" },
   },
   {
-    key: "violet",
-    label: "Violet Scale",
-    swatches: { good: "#b026ff", mid: "#9b84d6", bad: "#14011f" },
-  },
-  {
     key: "luxe",
     label: "Luxe",
     swatches: { good: "#d4af37", mid: "#c0c0c0", bad: "#7f1d1d" },
   },
   {
-    key: "blueAmberTeal",
-    label: "Blue · Amber · Teal",
-    swatches: { good: "#1fa187", mid: "#f2b705", bad: "#4c6a92" },
-  },
-  {
-    key: "crimsonVioletMint",
-    label: "Crimson · Violet · Mint",
-    swatches: { good: "#2ecc71", mid: "#7b61ff", bad: "#c81d25" },
+    key: "traffic",
+    label: "Traffic",
+    swatches: { good: "#16a34a", mid: "#fbbf24", bad: "#ef4444" },
   },
 ];
 
@@ -88,6 +72,7 @@ export default function SettingsPage() {
     if (typeof window === "undefined") return "";
     return window.localStorage.getItem("profile:preferredNameFull") ?? "";
   });
+  const [email, setEmail] = useState("");
   const [editingAccount, setEditingAccount] = useState(false);
   const [overseenBy, setOverseenBy] = useState<OverseerSummary[]>([]);
   const overseerNames = useMemo(
@@ -154,6 +139,9 @@ export default function SettingsPage() {
             setPreferredName(data.preferredName);
             cacheProfile(undefined, data.preferredName);
           }
+          if (typeof data?.email === "string") {
+            setEmail(data.email);
+          }
           if (typeof data?.colorPalette === "string") {
             setTheme(paletteToThemeKey(data.colorPalette));
           }
@@ -189,16 +177,45 @@ export default function SettingsPage() {
     setSaveNamesMsg(null);
     try {
       const normalizedUsername = username.trim().toLowerCase();
+      const normalizedEmail = email.trim().toLowerCase();
 
       const res = await fetch("/api/user/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: normalizedUsername, preferredName }),
+        body: JSON.stringify({ username: normalizedUsername, preferredName, email: normalizedEmail }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await res.json();
       // ensure local state stays normalized
       setUsername(normalizedUsername);
+      setEmail(normalizedEmail);
+      // Ensure the account email is treated as verified and selected
+      try {
+        await fetch("/api/user/verified-emails", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            emails: [normalizedEmail],
+            selected: selectedVerifiedEmails.length ? selectedVerifiedEmails : [normalizedEmail],
+          }),
+        });
+        // Refresh verified lists
+        const resVerified = await fetch("/api/user/verified-emails", {
+          cache: "no-store",
+          credentials: "include",
+        });
+        const data = await resVerified.json().catch(() => ({}));
+        const combined = Array.isArray(data?.combined) ? data.combined : [];
+        const selected =
+          Array.isArray(data?.selected) && data.selected.length ? data.selected : combined;
+        const fam = Array.isArray(data?.familyEmails) ? data.familyEmails : [];
+        setVerifiedCombined(combined);
+        setSelectedVerifiedEmails(selected);
+        setFamilyVerifiedEmails(fam);
+      } catch {
+        /* ignore */
+      }
       setSaveNamesMsg({ ok: true, text: "Saved." });
       setEditingAccount(false);
     } catch {
@@ -453,10 +470,11 @@ export default function SettingsPage() {
   const [themeBusy, setThemeBusy] = useState(false);
   const [themeMsg, setThemeMsg] = useState<null | { ok: boolean; text: string }>(null);
   const [logoutBusy, setLogoutBusy] = useState(false);
-  const [verifiedEmailsInput, setVerifiedEmailsInput] = useState("");
   const [familyVerifiedEmails, setFamilyVerifiedEmails] = useState<string[]>([]);
-  const [verifiedEmailsBusy, setVerifiedEmailsBusy] = useState(false);
-  const [verifiedEmailsMsg, setVerifiedEmailsMsg] = useState<string | null>(null);
+  const [verifiedCombined, setVerifiedCombined] = useState<string[]>([]);
+  const [selectedVerifiedEmails, setSelectedVerifiedEmails] = useState<string[]>([]);
+  const [selectionBusy, setSelectionBusy] = useState(false);
+  const [selectionMsg, setSelectionMsg] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -479,11 +497,21 @@ export default function SettingsPage() {
           credentials: "include",
         });
         if (!res.ok || !active) return;
-        const data = (await res.json()) as { emails?: string[]; familyEmails?: string[]; combined?: string[] };
+        const data = (await res.json()) as {
+          emails?: string[];
+          familyEmails?: string[];
+          combined?: string[];
+          selected?: string[];
+        };
         if (!active) return;
-        const emails = Array.isArray(data?.emails) ? data.emails : [];
+        const combined = Array.isArray(data?.combined) ? data.combined : [];
+        const selected =
+          Array.isArray(data?.selected) && data.selected.length
+            ? data.selected
+            : combined;
         const fam = Array.isArray(data?.familyEmails) ? data.familyEmails : [];
-        setVerifiedEmailsInput(emails.join("\n"));
+        setVerifiedCombined(combined);
+        setSelectedVerifiedEmails(selected);
         setFamilyVerifiedEmails(fam);
       } catch {
         /* ignore */
@@ -494,40 +522,35 @@ export default function SettingsPage() {
     };
   }, []);
 
-  function parseVerifiedEmails(raw: string) {
-    return raw
-      .split(/[\n,]+/g)
-      .map((entry) => entry.trim().toLowerCase())
-      .filter((entry) => entry.length > 0);
-  }
-
-  async function saveVerifiedEmails() {
-    if (verifiedEmailsBusy) return;
-    setVerifiedEmailsBusy(true);
-    setVerifiedEmailsMsg(null);
-    const emails = parseVerifiedEmails(verifiedEmailsInput);
+  async function saveVerifiedSelections(nextSelected: string[]) {
+    if (selectionBusy) return;
+    setSelectionBusy(true);
+    setSelectionMsg(null);
     try {
       const res = await fetch("/api/user/verified-emails", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ emails }),
+        body: JSON.stringify({ selected: nextSelected }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error || `HTTP ${res.status}`);
       }
-      const saved = Array.isArray(data?.emails) ? data.emails : emails;
-      setVerifiedEmailsInput(saved.join("\n"));
+      const combined = Array.isArray(data?.combined) ? data.combined : verifiedCombined;
+      const selected =
+        Array.isArray(data?.selected) && data.selected.length ? data.selected : combined;
+      setVerifiedCombined(combined);
+      setSelectedVerifiedEmails(selected);
       const fam = Array.isArray(data?.familyEmails) ? data.familyEmails : familyVerifiedEmails;
       setFamilyVerifiedEmails(fam);
-      setVerifiedEmailsMsg("Saved.");
+      setSelectionMsg("Saved.");
+      setTimeout(() => setSelectionMsg(null), 2500);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not save.";
-      setVerifiedEmailsMsg(message);
+      const message = err instanceof Error ? err.message : "Could not save selection.";
+      setSelectionMsg(message);
     } finally {
-      setVerifiedEmailsBusy(false);
-      setTimeout(() => setVerifiedEmailsMsg(null), 2500);
+      setSelectionBusy(false);
     }
   }
 
@@ -692,6 +715,21 @@ export default function SettingsPage() {
                   placeholder="How you want to be addressed"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm text-neutral-400 mb-1">Email address</label>
+                <input
+                  className={`w-full rounded-lg px-3 py-2 border ${
+                    editingAccount
+                      ? "bg-neutral-900 border-neutral-700 text-white"
+                      : "bg-neutral-900/40 border-neutral-800 text-neutral-500 cursor-not-allowed"
+                  }`}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value.toLowerCase())}
+                  disabled={!editingAccount}
+                  placeholder="you@example.com"
+                />
+              </div>
             </div>
 
             <div className="mt-4 flex items-center gap-3">
@@ -770,48 +808,66 @@ export default function SettingsPage() {
           {/* ---- Verified sender emails ---- */}
           <section className={card}>
             <h2 className="text-lg font-semibold mb-2">Verified sender emails</h2>
-            <p className="text-sm text-neutral-400 mb-4">
-              Save the newsletter or alert addresses you trust. Family members share their verified senders with you automatically.
+            <p className="text-sm text-neutral-400 mb-3">
+              These addresses (yours + family) are used to ingest news. Choose which to include on the News page.
             </p>
-            <textarea
-              value={verifiedEmailsInput}
-              onChange={(e) => setVerifiedEmailsInput(e.target.value)}
-              rows={4}
-              placeholder={"analyst@research.com\nalerts@example.com"}
-              className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-[var(--highlight-400)]"
-              disabled={verifiedEmailsBusy}
-            />
+            <div className="flex flex-wrap gap-2">
+              {verifiedCombined.length === 0 ? (
+                <span className="text-sm text-neutral-400">No verified addresses yet.</span>
+              ) : (
+                verifiedCombined.map((addr) => {
+                  const selected = selectedVerifiedEmails.includes(addr);
+                  return (
+                    <button
+                      key={addr}
+                      type="button"
+                      onClick={() => {
+                        const next = selected
+                          ? selectedVerifiedEmails.filter((e) => e !== addr)
+                          : Array.from(new Set([...selectedVerifiedEmails, addr]));
+                        setSelectedVerifiedEmails(next);
+                      }}
+                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${
+                        selected
+                          ? "border-[var(--good-400)] text-[var(--good-100)] bg-[var(--good-500)]/10"
+                          : "border-neutral-700 text-neutral-200 bg-neutral-900/60"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => {
+                          const next = selected
+                            ? selectedVerifiedEmails.filter((e) => e !== addr)
+                            : Array.from(new Set([...selectedVerifiedEmails, addr]));
+                          setSelectedVerifiedEmails(next);
+                        }}
+                        className="h-3 w-3 rounded border-neutral-600 bg-neutral-900 accent-[var(--good-400)]"
+                      />
+                      <span className="truncate">{addr}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            {familyVerifiedEmails.length > 0 && (
+              <p className="text-[11px] text-neutral-500 mt-2">
+                Family emails are included automatically; uncheck any you don’t want to see in News.
+              </p>
+            )}
             <div className="mt-3 flex items-center gap-3">
               <button
                 type="button"
-                onClick={saveVerifiedEmails}
-                disabled={verifiedEmailsBusy}
+                onClick={() => void saveVerifiedSelections(selectedVerifiedEmails)}
+                disabled={selectionBusy}
                 className="px-4 py-2 rounded-lg border border-neutral-700 bg-black/90 hover:border-neutral-600 disabled:opacity-60"
               >
-                {verifiedEmailsBusy ? "Saving…" : "Save verified emails"}
+                {selectionBusy ? "Saving…" : "Save selection"}
               </button>
-              {verifiedEmailsMsg ? (
-                <span className="text-sm text-neutral-300">{verifiedEmailsMsg}</span>
+              {selectionMsg ? (
+                <span className="text-sm text-neutral-300">{selectionMsg}</span>
               ) : null}
             </div>
-            {familyVerifiedEmails.length > 0 && (
-              <div className="mt-4 rounded-xl border border-neutral-700 bg-neutral-900/50 p-3 text-sm text-neutral-200">
-                <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Family verified emails</div>
-                <div className="flex flex-wrap gap-2">
-                  {familyVerifiedEmails.map((email) => (
-                    <span
-                      key={email}
-                      className="inline-flex items-center rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-100"
-                    >
-                      {email}
-                    </span>
-                  ))}
-                </div>
-                <p className="text-[11px] text-neutral-500 mt-2">
-                  These come from family members and are used alongside your own when fetching emails.
-                </p>
-              </div>
-            )}
           </section>
 
           {/* ---- Oversee ---- */}

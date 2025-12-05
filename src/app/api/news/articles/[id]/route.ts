@@ -87,12 +87,34 @@ export async function POST(
 
     // Summarization
     if (action === "summarize") {
-      const summary = await generateAndStoreSummary(articleId);
+      const result = await generateAndStoreSummary(articleId);
+
+      if (result.status === "missing") {
+        return NextResponse.json(
+          { error: result.reason || "Not found" },
+          { status: 404 }
+        );
+      }
+
+      if (result.status === "deleted") {
+        return NextResponse.json(
+          {
+            status: "deleted",
+            reason: result.reason,
+            decision: result.decision,
+          },
+          { status: 200 }
+        );
+      }
 
       return NextResponse.json(
         {
           status: "ok",
-          summary,
+          decision: result.decision,
+          reason: result.reason,
+          summary: result.summary,
+          qualityTag: result.quality,
+          errorNote: result.errorNote,
         },
         { status: 200 }
       );

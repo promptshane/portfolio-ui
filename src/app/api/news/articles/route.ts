@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { getAggregatedTickerSets } from "@/server/user/tickers";
+import { getAggregatedVerifiedEmailsForUser } from "@/server/user/preferences";
 
 export const runtime = "nodejs";
 
@@ -49,7 +50,20 @@ function getArticleTickerMatches(
 }
 
 export async function GET() {
+  const session = await getServerSession(authOptions);
+  const uid = Number((session as any)?.user?.id) || 0;
+  if (!uid) return NextResponse.json({ articles: [] }, { status: 200 });
+
+  const { selected: verifiedEmails } = await getAggregatedVerifiedEmailsForUser(uid);
+  const normalizedEmails = verifiedEmails.map((e) => e.trim().toLowerCase()).filter(Boolean);
+  if (!normalizedEmails.length) {
+    return NextResponse.json({ articles: [] }, { status: 200 });
+  }
+
   const articles = await prisma.newsArticle.findMany({
+    where: {
+      sourceEmail: { in: normalizedEmails },
+    },
     orderBy: { uploadedAt: "desc" },
     include: {
       discountPositions: {
@@ -58,16 +72,11 @@ export async function GET() {
     },
   });
 
-  // Default: unauthenticated, no per-user flags.
   let viewedIds = new Set<string>();
   let portfolioTickers = new Set<string>();
   let watchlistTickers = new Set<string>();
 
-  // Try to resolve current user
-  const session = await getServerSession(authOptions);
-  const uid = Number((session as any)?.user?.id) || 0;
-
-  if (uid && articles.length > 0) {
+  if (articles.length > 0) {
     const articleIds = articles.map((a) => a.id);
 
     const [views, tickerSets] = await Promise.all([
@@ -101,12 +110,12 @@ export async function GET() {
       );
 
       const matchedPortfolioTickers =
-        uid && portfolioTickers.size
+        portfolioTickers.size
           ? getArticleTickerMatches(a, portfolioTickers)
           : [];
 
       const matchedWatchlistTickers =
-        uid && watchlistTickers.size
+        watchlistTickers.size
           ? getArticleTickerMatches(a, watchlistTickers)
           : [];
 
@@ -128,27 +137,32 @@ export async function GET() {
         actionsJson: a.actionsJson,
         tickersJson: a.tickersJson,
         discountJson: a.discountJson,
+        storageDecision: a.storageDecision,
+        qualityTag: a.qualityTag,
+        qualityNote: a.qualityNote,
+        sourceEmail: a.sourceEmail,
         summarizedAt: a.summarizedAt
           ? a.summarizedAt.toISOString()
           : null,
         positionTickers,
         fileKind,
-        // New per-user flags (will be false/empty if not logged in)
-        viewed: uid ? viewedIds.has(a.id) : false,
-        hasPortfolioTicker: uid
-          ? matchedPortfolioTickers.length > 0
-          : false,
-        portfolioTickers: uid ? matchedPortfolioTickers : [],
-        hasWatchlistTicker: uid
-          ? matchedWatchlistTickers.length > 0
-          : false,
-        watchlistTickers: uid ? matchedWatchlistTickers : [],
+        viewed: viewedIds.has(a.id),
+        hasPortfolioTicker: matchedPortfolioTickers.length > 0,
+        portfolioTickers: matchedPortfolioTickers,
+        hasWatchlistTicker: matchedWatchlistTickers.length > 0,
+        watchlistTickers: matchedWatchlistTickers,
       };
     }),
   });
 }
 
 export async function POST(req: NextRequest) {
+  if (!process.env.S3_BUCKET) {
+    return NextResponse.json(
+      { error: "S3 is not configured. PDF uploads require cloud storage." },
+      { status: 500 }
+    );
+  }
   try {
     const formData = await req.formData();
     const files = formData.getAll("files");

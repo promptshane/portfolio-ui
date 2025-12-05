@@ -48,6 +48,8 @@ type Derivs = {
   adx: number[];
 };
 
+type HorizonKeyMap<T> = Record<HorizonKey, T>;
+
 type IntradaySeries = { dates: string[]; price: number[] };
 type IntradayKey = "1D" | "1W" | "1M_1H";
 
@@ -594,6 +596,87 @@ export default function useMomentumData({
     return indicatorSignals.composite.slice(start, end + 1);
   }, [indicatorSignals.composite, visibleIndexRange]);
 
+  const visibleCompositeSlicesByHorizon: HorizonKeyMap<number[]> = useMemo(() => {
+    const map: HorizonKeyMap<number[]> = { short: [], medium: [], long: [] };
+    const HMAP: HorizonKeyMap<number> = { short: 10, medium: 40, long: 160 };
+    const RSIMAP: HorizonKeyMap<number> = { short: 10, medium: 14, long: 50 };
+    const ADXMAP: HorizonKeyMap<number> = { short: 10, medium: 14, long: 50 };
+
+    const { start, end } = visibleIndexRange;
+
+    const computeFor = (key: HorizonKey) => {
+      const H = HMAP[key];
+      const rsiPeriodH = RSIMAP[key];
+      const adxPeriodH = ADXMAP[key];
+
+      const mom = computeMomentum({ close: indicatorPrices }, { horizons: [H] });
+      const align = (arr: number[]) => alignTail(arr, baseLen);
+      const bbUpper = align(mom.bbUpper ?? []);
+      const bbLower = align(mom.bbLower ?? []);
+      const macdHist = align(mom.macdHist ?? []);
+      const fullRSIh = alignTail(rsiWilder(indicatorPrices, rsiPeriodH), baseLen);
+      const fullADXAbsH = alignTail(
+        adxWilder(extendedOhlcSeries.high, extendedOhlcSeries.low, extendedOhlcSeries.close, adxPeriodH),
+        baseLen
+      );
+      const fullADXSignH = alignTail(
+        adxSignWilder(extendedOhlcSeries.high, extendedOhlcSeries.low, extendedOhlcSeries.close, adxPeriodH),
+        baseLen
+      );
+
+      const macdValues = macdHist.filter((v) => Number.isFinite(v));
+      const macdWindow = macdValues.slice(
+        Math.max(0, macdValues.length - Math.min(252, macdValues.length))
+      );
+      const macdStd = macdWindow.length ? stddev(macdWindow) : 0;
+      const macdDenom = macdStd > EPS ? macdStd : 1;
+
+      const compArr = new Array<number>(baseLen).fill(0);
+      for (let i = 0; i < baseLen; i++) {
+        const price = basePrices[i];
+        const upper = bbUpper[i];
+        const lower = bbLower[i];
+        let percentB = 0.5;
+        if (Number.isFinite(upper) && Number.isFinite(lower) && upper !== lower) {
+          percentB = clamp((price - lower) / Math.max(EPS, upper - lower), 0, 1);
+        }
+        const sBand = clamp((0.5 - percentB) / 0.5, -1, 1);
+
+        const rsiValue = fullRSIh[i];
+        const sRsi = Number.isFinite(rsiValue) ? clamp((50 - rsiValue) / 20, -1, 1) : 0;
+
+        const hist = macdHist[i];
+        const sMacd = Number.isFinite(hist) ? clamp((hist / macdDenom) / 2, -1, 1) : 0;
+
+        const adxAbs = fullADXAbsH[i];
+        const strength = Number.isFinite(adxAbs) ? clamp((adxAbs - 15) / 20, 0, 1) : 0;
+        const dirRaw = fullADXSignH[i];
+        const dir = Number.isFinite(dirRaw) ? clamp(dirRaw, -1, 1) : 0;
+        const sAdx = strength * dir;
+
+        const trending = Number.isFinite(adxAbs) && adxAbs >= 25;
+        const weights = trending
+          ? { macd: 0.45, rsi: 0.25, band: 0.20, adx: 0.10 }
+          : { macd: 0.25, rsi: 0.35, band: 0.30, adx: 0.10 };
+
+        const composite = clamp(
+          weights.band * sBand + weights.rsi * sRsi + weights.macd * sMacd + weights.adx * sAdx,
+          -1,
+          1
+        );
+        compArr[i] = Math.round(composite * 100);
+      }
+
+      map[key] = compArr.slice(start, end + 1);
+    };
+
+    computeFor("short");
+    computeFor("medium");
+    computeFor("long");
+
+    return map;
+  }, [indicatorPrices, baseLen, visibleIndexRange, basePrices, extendedOhlcSeries]);
+
   /* ------------------------------ Key Stats ------------------------------ */
   const keyStats: KeyStats | undefined = useMemo(() => {
     const r: any = result as any;
@@ -653,6 +736,7 @@ export default function useMomentumData({
     momentumDotScore,
     indicatorSignals,
     visibleCompositeSlice,
+    visibleCompositeSlicesByHorizon: visibleCompositeSlicesByHorizon,
 
     keyStats,
   };

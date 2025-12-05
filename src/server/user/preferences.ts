@@ -3,6 +3,8 @@ import prisma from "@/lib/prisma";
 
 let verifiedColumnEnsured = false;
 let ensurePromise: Promise<void> | null = null;
+let selectionColumnEnsured = false;
+let ensureSelectionPromise: Promise<void> | null = null;
 
 const familyTablesReady = () =>
   Boolean((prisma as any).familyMember?.findMany && (prisma as any).family?.findMany);
@@ -32,6 +34,33 @@ async function ensureVerifiedEmailsColumn() {
   });
 
   await ensurePromise;
+}
+
+async function ensureSelectionColumn() {
+  if (selectionColumnEnsured) return;
+  if (ensureSelectionPromise) {
+    await ensureSelectionPromise;
+    return;
+  }
+
+  ensureSelectionPromise = (async () => {
+    try {
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "User" ADD COLUMN "newsEmailSelectionsJson" TEXT'
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message.toLowerCase() : "";
+      if (!message.includes("duplicate column") && !message.includes("already exists")) {
+        throw err;
+      }
+    } finally {
+      selectionColumnEnsured = true;
+    }
+  })().finally(() => {
+    ensureSelectionPromise = null;
+  });
+
+  await ensureSelectionPromise;
 }
 
 function normalizeEmail(value: string): string | null {
@@ -121,8 +150,10 @@ export async function getAggregatedVerifiedEmailsForUser(userId: number): Promis
   own: string[];
   family: string[];
   combined: string[];
+  selected: string[];
 }> {
   const own = await getVerifiedEmailsForUser(userId);
+  const selectedRaw = await getSelectedEmailsForUser(userId);
   const familyMemberIds = await getFamilyMemberIds(userId);
   let family: string[] = [];
   if (familyMemberIds.length && familyTablesReady()) {
@@ -152,6 +183,45 @@ export async function getAggregatedVerifiedEmailsForUser(userId: number): Promis
       family = [];
     }
   }
-  const combined = Array.from(new Set([...own, ...family]));
-  return { own, family, combined };
+  const baseCombined = Array.from(new Set([...own, ...family]));
+  // Allow explicit selections to include addresses beyond the auto-detected family/own list.
+  const selected = selectedRaw.length ? selectedRaw : baseCombined;
+  const combined = Array.from(new Set([...baseCombined, ...selected]));
+  return { own, family, combined, selected };
+}
+
+export async function getSelectedEmailsForUser(userId: number): Promise<string[]> {
+  if (!userId) return [];
+  await ensureSelectionColumn();
+  const record = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { newsEmailSelectionsJson: true },
+  });
+  if (!record?.newsEmailSelectionsJson) return [];
+  try {
+    const parsed = JSON.parse(record.newsEmailSelectionsJson);
+    if (!Array.isArray(parsed)) return [];
+    const deduped = new Set<string>();
+    for (const entry of parsed) {
+      if (typeof entry !== "string") continue;
+      const normalized = normalizeEmail(entry);
+      if (normalized) deduped.add(normalized);
+    }
+    return Array.from(deduped);
+  } catch {
+    return [];
+  }
+}
+
+export async function saveSelectedEmailsForUser(userId: number, emails: string[]): Promise<string[]> {
+  if (!userId) return [];
+  await ensureSelectionColumn();
+  const normalized = parseEmailList(emails);
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      newsEmailSelectionsJson: normalized.length ? JSON.stringify(normalized) : null,
+    },
+  });
+  return normalized;
 }

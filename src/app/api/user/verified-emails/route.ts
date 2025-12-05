@@ -5,6 +5,7 @@ import {
   getAggregatedVerifiedEmailsForUser,
   parseEmailList,
   saveVerifiedEmailsForUser,
+  saveSelectedEmailsForUser,
 } from "@/server/user/preferences";
 
 export const dynamic = "force-dynamic";
@@ -24,8 +25,8 @@ export async function GET() {
   const uid = getUserId(session);
   if (!uid) return NextResponse.json({ emails: [] }, { status: 200 });
 
-  const { own, family, combined } = await getAggregatedVerifiedEmailsForUser(uid);
-  return NextResponse.json({ emails: own, familyEmails: family, combined });
+  const { own, family, combined, selected } = await getAggregatedVerifiedEmailsForUser(uid);
+  return NextResponse.json({ emails: own, familyEmails: family, combined, selected });
 }
 
 export async function POST(req: NextRequest) {
@@ -41,9 +42,25 @@ export async function POST(req: NextRequest) {
   }
 
   const rawList = Array.isArray(body?.emails) ? body.emails : body?.emails;
-  const emails = parseEmailList(rawList);
+  const rawSelected = Array.isArray(body?.selected) ? body.selected : body?.selected;
+  let emails: string[] | null = null;
+  let selected: string[] | null = null;
 
-  const saved = await saveVerifiedEmailsForUser(uid, emails);
+  if (rawList !== undefined) {
+    emails = parseEmailList(rawList);
+    await saveVerifiedEmailsForUser(uid, emails);
+  }
+
+  if (rawSelected !== undefined) {
+    selected = parseEmailList(rawSelected);
+    await saveSelectedEmailsForUser(uid, selected);
+  }
+
   const aggregated = await getAggregatedVerifiedEmailsForUser(uid);
-  return NextResponse.json({ emails: saved, familyEmails: aggregated.family, combined: aggregated.combined });
+  return NextResponse.json({
+    emails: aggregated.own,
+    familyEmails: aggregated.family,
+    combined: aggregated.combined,
+    selected: aggregated.selected,
+  });
 }

@@ -12,10 +12,8 @@ export const runtime = "nodejs";
 const allowedThemes = new Set([
   "default",
   "icy",
-  "violet",
   "luxe",
-  "blueAmberTeal",
-  "crimsonVioletMint",
+  "traffic",
 ]);
 
 function normalizeThemeCookie(value?: string | null) {

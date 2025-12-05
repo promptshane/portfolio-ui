@@ -1,7 +1,7 @@
 // src/app/analysis/sections/FinancialDisplay.tsx
 "use client";
 
-import { EvalResult, FSBlock, FSKind, FSRow, fmtPct0, dotClass } from "../shared";
+import { EvalResult, FSBlock, FSKind, FSRow, fmtPct0, dotClass, linRegStats, toPathXY } from "../shared";
 import { buildFinScatter } from "../calc/financeCalc";
 import { computeFinancialScores } from "../calc/financialScoreCalc";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -29,11 +29,13 @@ function FSCard({
   onClick,
   block,
   score,
+  label,
 }: {
   selected: boolean;
   onClick: () => void;
   block: FSBlock;
   score?: number;
+  label?: string;
 }) {
   return (
     <button
@@ -47,10 +49,10 @@ function FSCard({
       }}
       className={`text-left bg-neutral-800 rounded-2xl p-4 border transition-colors w-full ${
         selected ? "border-white" : "border-neutral-700 hover:border-neutral-500"
-      } focus:outline-none focus:ring-2 focus:ring-white/40`}
+      } focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus:ring-0`}
     >
       <div className="flex items-center justify-between text-sm font-semibold mb-3">
-        <span>{block.title}</span>
+        <span>{label ?? block.title}</span>
         {typeof score === "number" && (
           <span
             className={`w-3 h-3 rounded-full border border-neutral-700 shadow-[0_0_0_2px_rgba(0,0,0,0.4)] ${dotClass(
@@ -178,11 +180,19 @@ const normalizeRatiosRecord = (input: any): Record<string, number> => {
   return out;
 };
 
+const FS_LABEL_FULL: Record<FSKind, string> = {
+  is: "Income Statement",
+  bs: "Balance Sheet",
+  cfs: "Cash Flow Statement",
+};
+
 type Props = {
   result: EvalResult;
   activeFS: FSKind;
   setActiveFS: (k: FSKind) => void;
 };
+
+const scoreColor = (v: number) => (v >= 67 ? "var(--good-500)" : v >= 34 ? "var(--mid-400)" : "var(--bad-500)");
 
 export default function FinancialDisplay({ result, activeFS, setActiveFS }: Props) {
   const [ratios, setRatios] = useState<Record<string, number> | null>(null);
@@ -458,6 +468,13 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
   })();
 
   const [finHoverI, setFinHoverI] = useState<number | null>(null);
+  const [summaryMode, setSummaryMode] = useState(false);
+  const [summarySelection, setSummarySelection] = useState<Record<FSKind, boolean>>({
+    is: true,
+    bs: true,
+    cfs: true,
+  });
+  const [summaryHoverI, setSummaryHoverI] = useState<number | null>(null);
   const finScores = useMemo(() => computeFinancialScores(result), [result]);
 
   // number formatter for $ in thousands
@@ -481,6 +498,15 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
     return () => ro.disconnect();
   }, [svgW]);
 
+  useEffect(() => {
+    if (summaryMode) {
+      setSummarySelection({ is: true, bs: true, cfs: true });
+      setSummaryHoverI(null);
+    } else {
+      setSummaryHoverI(null);
+    }
+  }, [summaryMode]);
+
   // 5 actual (FMP) + 5 forecast (already scaled to thousands in financeCalc)
   const finScatter = useMemo(
     () =>
@@ -489,6 +515,114 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
         : null,
     [hasFinancial, result, activeFS, svgW]
   );
+
+  const summarySelectedKinds = useMemo(() => {
+    const enabled = Object.entries(summarySelection)
+      .filter(([, on]) => on)
+      .map(([k]) => k as FSKind);
+    return enabled.length ? enabled : (["is", "bs", "cfs"] as FSKind[]);
+  }, [summarySelection]);
+
+  useEffect(() => {
+    setSummaryHoverI(null);
+  }, [summarySelectedKinds]);
+
+  const summaryScore = useMemo(() => {
+    const weights: Record<FSKind, number> = { is: 0.2, bs: 0.35, cfs: 0.45 };
+    const seriesList = summarySelectedKinds.map((k) => finScores.perStatement[k].series ?? []);
+    const minLen = seriesList.length ? Math.min(...seriesList.map((s) => s.length || 0)) : 0;
+    if (!minLen) {
+      return { series: [] as number[], latest: finScores.overall.latest };
+    }
+
+    const totalWeight = summarySelectedKinds.reduce((acc, k) => acc + (weights[k] ?? 1), 0) || summarySelectedKinds.length;
+    const normWeights = summarySelectedKinds.map((k) => ((weights[k] ?? 1) as number) / totalWeight);
+
+    const combined = Array.from({ length: minLen }, (_, idx) =>
+      summarySelectedKinds.reduce((sum, k, i) => {
+        const series = finScores.perStatement[k].series;
+        const val = series[idx] ?? series[series.length - 1] ?? finScores.overall.latest;
+        return sum + normWeights[i] * val;
+      }, 0)
+    );
+
+    return { series: combined, latest: combined[combined.length - 1] ?? finScores.overall.latest };
+  }, [finScores, summarySelectedKinds]);
+
+  const summaryYears = useMemo(() => {
+    const len = summaryScore.series.length;
+    if (!len) return [];
+    const pickYears = (k: FSKind) => {
+      const yrs = result.finYears?.[k];
+      if (yrs?.length) {
+        if (yrs.length === len) return yrs;
+        if (yrs.length > len) return yrs.slice(yrs.length - len);
+      }
+      return null;
+    };
+    for (const k of summarySelectedKinds) {
+      const yrs = pickYears(k);
+      if (yrs) return yrs;
+    }
+    if (finScatter?.years?.length) {
+      return finScatter.years.slice(0, len);
+    }
+    const thisYear = new Date().getFullYear();
+    return Array.from({ length: len }, (_, i) => `${thisYear - (len - 1) + i}`);
+  }, [finScatter, result.finYears, summaryScore.series.length, summarySelectedKinds]);
+
+  const summaryGraph = useMemo(() => {
+    if (!summaryScore.series.length) return null;
+    const actual = summaryScore.series.slice(-5);
+    const yearsActual = summaryYears.slice(-actual.length);
+    const nAct = actual.length;
+    const nFor = 5;
+    const nTot = nAct + nFor;
+    const { slope, intercept } = linRegStats(actual);
+    const reg = Array.from({ length: nTot }, (_, i) => intercept + slope * i);
+    const combined = Array.from({ length: nTot }, (_, i) => (i < nAct ? actual[i] : reg[i]));
+    const pad = finScatter?.pad ?? 10;
+    const w = finScatter?.w ?? svgW;
+    const h = finScatter?.h ?? svgH;
+    const min = Math.min(0, ...combined, 0);
+    const max = Math.max(100, ...combined, 1);
+    const X = (i: number) => pad + (i * (w - 2 * pad)) / Math.max(1, nTot - 1);
+    const Y = (v: number) =>
+      h - pad - ((Math.max(min, Math.min(max, v)) - min) * (h - 2 * pad)) / Math.max(1, max - min);
+
+    const yearsFull = (() => {
+      const out = [...yearsActual];
+      const last = out[out.length - 1];
+      const lastNum = Number.parseInt(last, 10);
+      for (let i = 0; i < nFor; i++) {
+        const val =
+          Number.isFinite(lastNum) && !Number.isNaN(lastNum) ? String(lastNum + i + 1) : `F+${i + 1}`;
+        out.push(val);
+      }
+      return out.slice(0, nTot);
+    })();
+
+    const points = Array.from({ length: nTot }, (_, i) => ({
+      x: X(i),
+      y: Y(combined[i]),
+      v: combined[i],
+      year: yearsFull[i] ?? "",
+      actual: i < nAct,
+    }));
+
+    const regActPath = toPathXY(
+      reg.map((v, idx) => (idx < nAct ? v : Number.NaN)),
+      X,
+      Y
+    );
+    const regForecastPath = toPathXY(
+      reg.map((v, idx) => (idx >= Math.max(0, nAct - 1) ? v : Number.NaN)),
+      X,
+      Y
+    );
+
+    return { nAct, nTot, w, h, pad, points, regActPath, regForecastPath, Y };
+  }, [finScatter, summaryScore.series, summaryYears, svgH, svgW]);
 
   if (!finScatter) {
     return (
@@ -510,17 +644,57 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
       ? scoreSeriesLen - 1
       : null;
 
-  const headerScore =
+  const summaryChartIdx =
+    summaryMode && summaryGraph && summaryHoverI != null
+      ? Math.max(0, Math.min(summaryHoverI, summaryGraph.nTot - 1))
+      : null;
+
+  const defaultHeaderScore =
     activeScoreIdx != null && activeScoreIdx >= 0
       ? finScores.overall.series[activeScoreIdx] ?? finScores.overall.latest
       : finScores.overall.latest;
 
+  const headerScore = summaryMode
+    ? summaryChartIdx != null
+      ? summaryGraph?.points[summaryChartIdx]?.v ?? summaryScore.latest
+      : summaryGraph?.points?.[Math.max(0, (summaryGraph?.nAct ?? 1) - 1)]?.v ?? summaryScore.latest
+    : defaultHeaderScore;
+
   const statementScore = (kind: FSKind) => {
     const series = finScores.perStatement[kind].series;
     if (!series.length) return undefined;
-    const idx = activeScoreIdx != null ? Math.min(activeScoreIdx, series.length - 1) : series.length - 1;
+    const idx =
+      summaryMode && summaryChartIdx != null
+        ? Math.min(summaryChartIdx, series.length - 1)
+        : activeScoreIdx != null
+        ? Math.min(activeScoreIdx, series.length - 1)
+        : series.length - 1;
     return series[idx];
   };
+
+  const handleCardClick = (kind: FSKind) => {
+    if (summaryMode) {
+      setSummarySelection((sel) => {
+        const next = { ...sel, [kind]: !sel[kind] };
+        if (!Object.values(next).some(Boolean)) return sel;
+        return next;
+      });
+      setSummaryHoverI(null);
+    } else {
+      setActiveFS(kind);
+    }
+  };
+
+  const handleDotToggle = () => {
+    setSummaryMode((v) => !v);
+    setFinHoverI(null);
+    setSummaryHoverI(null);
+  };
+
+  const summaryHoverPt =
+    summaryMode && summaryGraph && summaryChartIdx != null
+      ? summaryGraph.points[Math.min(summaryChartIdx, summaryGraph.points.length - 1)]
+      : null;
 
   return (
     <>
@@ -535,125 +709,229 @@ export default function FinancialDisplay({ result, activeFS, setActiveFS }: Prop
             Source: Financial Modeling Prep
           </div>
         </div>
-        <div
-          className={`w-5 h-5 rounded-full border border-neutral-700 shadow-[0_0_0_3px_rgba(0,0,0,0.35)] ${dotClass(
+        <button
+          type="button"
+          onClick={handleDotToggle}
+          aria-pressed={summaryMode}
+          className={`w-6 h-6 rounded-full border border-neutral-700 shadow-[0_0_0_3px_rgba(0,0,0,0.35)] ${dotClass(
             headerScore ?? result.financialScore
-          )}`}
-          title="Financial quality"
+          )} ${summaryMode ? "ring-2 ring-white" : ""}`}
+          title={summaryMode ? "Hide financial score timeline" : "Show financial score timeline"}
         />
       </div>
 
       {/* Graph */}
       <div ref={containerRef} className="bg-neutral-800 rounded-2xl p-4 border border-neutral-700">
-        <svg
-          key={activeFS}
-          viewBox={`0 0 ${finScatter.w} ${finScatter.h}`}
-          className="w-full h-[180px]"
-          preserveAspectRatio="xMidYMid meet"
-          onMouseMove={(e) => {
-            const svgEl = e.currentTarget as SVGSVGElement;
-            const rect = svgEl.getBoundingClientRect();
+        {summaryMode ? (
+          summaryGraph ? (
+            <div className="space-y-2">
+              <svg
+                viewBox={`0 0 ${summaryGraph.w} ${summaryGraph.h}`}
+                className="w-full h-[180px]"
+                preserveAspectRatio="xMidYMid meet"
+                onMouseMove={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const scale = Math.min(rect.width / summaryGraph.w, rect.height / summaryGraph.h);
+                  const leftOffset = (rect.width - scale * summaryGraph.w) / 2;
+                  const xInSvg = (e.clientX - rect.left - leftOffset) / scale;
+                  const t = Math.max(
+                    0,
+                    Math.min(
+                      1,
+                      (xInSvg - summaryGraph.pad) / Math.max(1, summaryGraph.w - 2 * summaryGraph.pad)
+                    )
+                  );
+                  const idx = Math.round(t * (summaryGraph.nTot - 1));
+                  setSummaryHoverI(idx);
+                }}
+                onMouseLeave={() => setSummaryHoverI(null)}
+              >
+                {[67, 34].map((v) => {
+                  const y = summaryGraph.Y ? summaryGraph.Y(v) : null;
+                  if (y == null || Number.isNaN(y)) return null;
+                  return (
+                    <line
+                      key={v}
+                      x1={0}
+                      x2={summaryGraph.w}
+                      y1={y}
+                      y2={y}
+                      stroke={v === 67 ? "var(--good-500)" : "var(--mid-400)"}
+                      strokeWidth={0.75}
+                      strokeDasharray="3 4"
+                      opacity={0.35}
+                    />
+                  );
+                })}
+                <path
+                  d={summaryGraph.regActPath}
+                  fill="none"
+                  stroke="white"
+                  strokeWidth={1.75}
+                  strokeLinecap="round"
+                />
+                <path
+                  d={summaryGraph.regForecastPath}
+                  fill="none"
+                  stroke="white"
+                  strokeWidth={1.75}
+                  strokeDasharray="6 4"
+                  strokeLinecap="round"
+                />
+                {summaryGraph.points
+                  .filter((p) => p.actual)
+                  .map((p, idx) => (
+                    <circle
+                      key={idx}
+                      cx={p.x}
+                      cy={p.y}
+                      r={summaryHoverI != null && summaryHoverI === idx ? 4 : 3}
+                      fill={scoreColor(p.v)}
+                      stroke="#111827"
+                      strokeWidth={1}
+                    />
+                  ))}
+                {summaryHoverPt && (
+                  <g>
+                    <line x1={summaryHoverPt.x} x2={summaryHoverPt.x} y1={10} y2={summaryGraph.h - 10} stroke="#ffffff33" />
+                    <g
+                      transform={`translate(${Math.min(
+                        summaryGraph.w - 200,
+                        Math.max(10, summaryHoverPt.x + 8)
+                      )},12)`}
+                    >
+                      <rect width="190" height="60" rx="8" fill="#0b0f1a" stroke="#374151" />
+                      <text x="10" y="20" fill="#9ca3af" fontSize="12">
+                        {summaryHoverPt.year || (summaryHoverPt.actual ? "Actual" : "Forecast")}
+                      </text>
+                      <text x="10" y="38" fill="white" fontSize="14" fontWeight="600">
+                        {Math.round(summaryHoverPt.v)} / 100
+                      </text>
+                      <text x="10" y="52" fill="#9ca3af" fontSize="11">
+                        {summaryHoverPt.actual ? "Actual" : "Forecast"}
+                      </text>
+                    </g>
+                  </g>
+                )}
+              </svg>
+            </div>
+          ) : (
+            <div className="text-sm text-neutral-400">Not enough score history to chart.</div>
+          )
+        ) : (
+          <svg
+            key={activeFS}
+            viewBox={`0 0 ${finScatter.w} ${finScatter.h}`}
+            className="w-full h-[180px]"
+            preserveAspectRatio="xMidYMid meet"
+            onMouseMove={(e) => {
+              const svgEl = e.currentTarget as SVGSVGElement;
+              const rect = svgEl.getBoundingClientRect();
 
-            // Account for potential letterboxing from preserveAspectRatio="meet"
-            const scale = Math.min(rect.width / finScatter.w, rect.height / finScatter.h);
-            const leftOffset = (rect.width - scale * finScatter.w) / 2;
+              // Account for potential letterboxing from preserveAspectRatio="meet"
+              const scale = Math.min(rect.width / finScatter.w, rect.height / finScatter.h);
+              const leftOffset = (rect.width - scale * finScatter.w) / 2;
 
-            const xInSvg = (e.clientX - rect.left - leftOffset) / scale;
-            const t = Math.max(
-              0,
-              Math.min(
-                1,
-                (xInSvg - finScatter.pad) / Math.max(1, finScatter.w - 2 * finScatter.pad)
-              )
-            );
-            const i = Math.round(t * (finScatter.nTot - 1));
-            setFinHoverI(i);
-          }}
-          onMouseLeave={() => setFinHoverI(null)}
-        >
-          {/* Regressions */}
-          <path d={finScatter.badRegSolidPath} fill="none" stroke="var(--bad-400)" strokeWidth={1.75} />
-          <path d={finScatter.goodRegSolidPath} fill="none" stroke="var(--good-300)" strokeWidth={1.75} />
-          <path d={finScatter.netRegSolidPath}  fill="none" stroke="var(--mid-400)"  strokeWidth={1.75} />
-          {/* Forecast (dashed) */}
-          <path d={finScatter.badRegForecastPath}  fill="none" stroke="var(--bad-400)" strokeWidth={1.75} strokeDasharray="6 4" />
-          <path d={finScatter.goodRegForecastPath} fill="none" stroke="var(--good-300)" strokeWidth={1.75} strokeDasharray="6 4" />
-          <path d={finScatter.netRegForecastPath}  fill="none" stroke="var(--mid-400)"  strokeWidth={1.75} strokeDasharray="6 4" />
+              const xInSvg = (e.clientX - rect.left - leftOffset) / scale;
+              const t = Math.max(
+                0,
+                Math.min(
+                  1,
+                  (xInSvg - finScatter.pad) / Math.max(1, finScatter.w - 2 * finScatter.pad)
+                )
+              );
+              const i = Math.round(t * (finScatter.nTot - 1));
+              setFinHoverI(i);
+            }}
+            onMouseLeave={() => setFinHoverI(null)}
+          >
+            {/* Regressions */}
+            <path d={finScatter.badRegSolidPath} fill="none" stroke="var(--bad-400)" strokeWidth={1.75} />
+            <path d={finScatter.goodRegSolidPath} fill="none" stroke="var(--good-300)" strokeWidth={1.75} />
+            <path d={finScatter.netRegSolidPath}  fill="none" stroke="var(--mid-400)"  strokeWidth={1.75} />
+            {/* Forecast (dashed) */}
+            <path d={finScatter.badRegForecastPath}  fill="none" stroke="var(--bad-400)" strokeWidth={1.75} strokeDasharray="6 4" />
+            <path d={finScatter.goodRegForecastPath} fill="none" stroke="var(--good-300)" strokeWidth={1.75} strokeDasharray="6 4" />
+            <path d={finScatter.netRegForecastPath}  fill="none" stroke="var(--mid-400)"  strokeWidth={1.75} strokeDasharray="6 4" />
 
-          {/* Actual dots */}
-          {Array.from({ length: finScatter.nAct }).map((_, i) => (
-            <g key={i}>
-              <circle cx={finScatter.X(i)} cy={finScatter.Y(finScatter.trio.bad[i])}  r="3" fill="var(--bad-400)" />
-              <circle cx={finScatter.X(i)} cy={finScatter.Y(finScatter.trio.good[i])} r="3" fill="var(--good-300)" />
-              <circle cx={finScatter.X(i)} cy={finScatter.Y(finScatter.trio.net[i])}  r="3" fill="var(--mid-400)" />
-            </g>
-          ))}
-
-          {/* hover + tooltip */}
-          {finHoverI !== null && (() => {
-            const i = finHoverI!;
-            const x = finScatter.X(i);
-            const val = (arr: number[], pred: number[]) => (i < finScatter.nAct ? arr[i] : pred[i]);
-            const vGood = val(finScatter.trio.good, finScatter.gPred);
-            const vBad = val(finScatter.trio.bad, finScatter.bPred);
-            const vNet = val(finScatter.trio.net, finScatter.nPred);
-
-            const labelGood = activeFS === "is" ? "Revenue" : activeFS === "bs" ? "Assets" : "Operating CF";
-            const labelBad = activeFS === "is" ? "Cost" : activeFS === "bs" ? "Liabilities" : "CapEx";
-            const labelNet = activeFS === "is" ? "Net Income" : activeFS === "bs" ? "Equity" : "FCF";
-
-            const mk = (v: number, color: string) => (
-              <circle cx={x} cy={finScatter.Y(v)} r="4" fill={color} stroke="#111827" strokeWidth="1" />
-            );
-
-            const year = finScatter.years[i];
-            const boxX = Math.min(finScatter.w - 210, Math.max(10, x + 8));
-            const boxY = 14;
-
-            return (
-              <g>
-                <line x1={x} x2={x} y1={10} y2={finScatter.h - 10} stroke="#ffffff33" strokeWidth={1} />
-                {mk(vGood, "var(--good-300)")}
-                {mk(vBad,  "var(--bad-400)")}
-                {mk(vNet,  "var(--mid-400)")}
-                <g transform={`translate(${boxX},${boxY})`}>
-                  <rect width="200" height="80" rx="8" fill="#0b0f1a" stroke="#374151" />
-                  <text x="8" y="18" fill="#9ca3af" fontSize="12">{year}  •  $K</text>
-                  <text x="8" y="36" fill="var(--good-300)" fontSize="12">
-                    {labelGood}: {fmtK.format(vGood)}
-                  </text>
-                  <text x="8" y="52" fill="var(--bad-400)" fontSize="12">
-                    {labelBad}: {fmtK.format(vBad)}
-                  </text>
-                  <text x="8" y="68" fill="var(--mid-400)" fontSize="12">
-                    {labelNet}: {fmtK.format(vNet)}
-                  </text>
-                </g>
+            {/* Actual dots */}
+            {Array.from({ length: finScatter.nAct }).map((_, i) => (
+              <g key={i}>
+                <circle cx={finScatter.X(i)} cy={finScatter.Y(finScatter.trio.bad[i])}  r="3" fill="var(--bad-400)" />
+                <circle cx={finScatter.X(i)} cy={finScatter.Y(finScatter.trio.good[i])} r="3" fill="var(--good-300)" />
+                <circle cx={finScatter.X(i)} cy={finScatter.Y(finScatter.trio.net[i])}  r="3" fill="var(--mid-400)" />
               </g>
-            );
-          })()}
-        </svg>
+            ))}
+
+            {/* hover + tooltip */}
+            {finHoverI !== null && (() => {
+              const i = finHoverI!;
+              const x = finScatter.X(i);
+              const val = (arr: number[], pred: number[]) => (i < finScatter.nAct ? arr[i] : pred[i]);
+              const vGood = val(finScatter.trio.good, finScatter.gPred);
+              const vBad = val(finScatter.trio.bad, finScatter.bPred);
+              const vNet = val(finScatter.trio.net, finScatter.nPred);
+
+              const labelGood = activeFS === "is" ? "Revenue" : activeFS === "bs" ? "Assets" : "Operating CF";
+              const labelBad = activeFS === "is" ? "Cost" : activeFS === "bs" ? "Liabilities" : "CapEx";
+              const labelNet = activeFS === "is" ? "Net Income" : activeFS === "bs" ? "Equity" : "FCF";
+
+              const mk = (v: number, color: string) => (
+                <circle cx={x} cy={finScatter.Y(v)} r="4" fill={color} stroke="#111827" strokeWidth="1" />
+              );
+
+              const year = finScatter.years[i];
+              const boxX = Math.min(finScatter.w - 210, Math.max(10, x + 8));
+              const boxY = 14;
+
+              return (
+                <g>
+                  <line x1={x} x2={x} y1={10} y2={finScatter.h - 10} stroke="#ffffff33" strokeWidth={1} />
+                  {mk(vGood, "var(--good-300)")}
+                  {mk(vBad,  "var(--bad-400)")}
+                  {mk(vNet,  "var(--mid-400)")}
+                  <g transform={`translate(${boxX},${boxY})`}>
+                    <rect width="200" height="80" rx="8" fill="#0b0f1a" stroke="#374151" />
+                    <text x="8" y="18" fill="#9ca3af" fontSize="12">{year}  •  $K</text>
+                    <text x="8" y="36" fill="var(--good-300)" fontSize="12">
+                      {labelGood}: {fmtK.format(vGood)}
+                    </text>
+                    <text x="8" y="52" fill="var(--bad-400)" fontSize="12">
+                      {labelBad}: {fmtK.format(vBad)}
+                    </text>
+                    <text x="8" y="68" fill="var(--mid-400)" fontSize="12">
+                      {labelNet}: {fmtK.format(vNet)}
+                    </text>
+                  </g>
+                </g>
+              );
+            })()}
+          </svg>
+        )}
       </div>
 
       {/* Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <FSCard
-          selected={activeFS === "is"}
-          onClick={() => setActiveFS("is")}
+          selected={summaryMode ? summarySelection.is : activeFS === "is"}
+          onClick={() => handleCardClick("is")}
           block={result.details.is}
           score={statementScore("is")}
+          label={FS_LABEL_FULL.is}
         />
         <FSCard
-          selected={activeFS === "bs"}
-          onClick={() => setActiveFS("bs")}
+          selected={summaryMode ? summarySelection.bs : activeFS === "bs"}
+          onClick={() => handleCardClick("bs")}
           block={result.details.bs}
           score={statementScore("bs")}
+          label={FS_LABEL_FULL.bs}
         />
         <FSCard
-          selected={activeFS === "cfs"}
-          onClick={() => setActiveFS("cfs")}
+          selected={summaryMode ? summarySelection.cfs : activeFS === "cfs"}
+          onClick={() => handleCardClick("cfs")}
           block={result.details.cfs}
           score={statementScore("cfs")}
+          label={FS_LABEL_FULL.cfs}
         />
       </div>
 

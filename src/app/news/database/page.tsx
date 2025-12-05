@@ -19,6 +19,9 @@ type Article = {
   actionsJson: string | null;
   tickersJson: string | null;
   summarizedAt: string | null;
+  storageDecision?: string | null;
+  qualityTag?: string | null;
+  qualityNote?: string | null;
   discountJson?: string | null;
 };
 
@@ -47,6 +50,22 @@ function formatDateTime(iso: string | null) {
 }
 
 type ListTimeframe = "1D" | "1W" | "1M" | "1Y" | "All";
+
+function normalizeTagValue(value?: string | null): string | null {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed.length ? trimmed : null;
+}
+
+function getArticleQuality(article: Article): { tag: "Good" | "Error" | null; note: string } {
+  const raw = (normalizeTagValue(article.qualityTag) || "").toLowerCase();
+  let tag: "Good" | "Error" | null = null;
+  if (raw === "error") tag = "Error";
+  else if (raw === "good") tag = "Good";
+  else if (article.hasSummary) tag = "Good";
+
+  const note = normalizeTagValue(article.qualityNote) ?? "";
+  return { tag, note };
+}
 
 function parseArticleData(article: Article): ParsedArticleData {
   const title =
@@ -308,8 +327,10 @@ export default function NewsDatabasePage() {
       try {
         const res = await fetch("/api/user/verified-emails", { cache: "no-store" });
         if (!res.ok || !active) return;
-        const data = (await res.json()) as { emails?: string[] };
-        const saved = Array.isArray(data?.emails) ? data.emails : [];
+        const data = (await res.json()) as { emails?: string[]; selected?: string[]; combined?: string[] };
+        const selected = Array.isArray(data?.selected) ? data.selected : [];
+        const combined = Array.isArray(data?.combined) ? data.combined : [];
+        const saved = selected.length ? selected : Array.isArray(data?.emails) ? data.emails : combined;
         if (
           !emailPrefillRef.current &&
           !emailSendersValueRef.current.trim() &&
@@ -431,11 +452,24 @@ export default function NewsDatabasePage() {
       const processed = Number(summary.processedEmails || 0);
       const duplicates = Number(summary.duplicates || 0);
       const pdfUploads = Number(summary.pdfUploads || 0);
-      const textUploads = Number(summary.textUploads || 0);
+      const attachmentPdfUploads = Number(summary.attachmentPdfUploads || 0);
+      const bodyPdfUploads = Number(summary.bodyPdfUploads || 0);
+      const detailParts: string[] = [];
+      if (attachmentPdfUploads) {
+        detailParts.push(
+          `${attachmentPdfUploads} attachment PDF${attachmentPdfUploads === 1 ? "" : "s"}`
+        );
+      }
+      if (bodyPdfUploads) {
+        detailParts.push(
+          `${bodyPdfUploads} body PDF${bodyPdfUploads === 1 ? "" : "s"}`
+        );
+      }
+      const detailLabel = detailParts.length ? ` (${detailParts.join(" + ")})` : "";
 
       const message = `Loaded ${filesInserted} file${
         filesInserted === 1 ? "" : "s"
-      } (${pdfUploads} PDF, ${textUploads} text) from ${processed} email${
+      } (${pdfUploads} PDF)${detailLabel} from ${processed} email${
         processed === 1 ? "" : "s"
       }. Skipped ${duplicates} duplicate${
         duplicates === 1 ? "" : "s"
@@ -968,15 +1002,17 @@ export default function NewsDatabasePage() {
               <table className="w-full table-fixed text-sm">
                 <colgroup>
                   <col className="w-12" />
-                  <col className="w-[50%]" />
-                  <col className="w-[22%]" />
-                  <col className="w-[16%]" />
+                  <col className="w-[46%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[14%]" />
                 </colgroup>
                 <thead>
                   <tr className="border-b border-neutral-700 text-xs uppercase tracking-wide text-neutral-400">
                     <th className="py-2 pr-3 text-left font-medium">Select</th>
                     <th className="py-2 pr-4 text-left font-medium">Filename</th>
                     <th className="py-2 px-4 text-left font-medium">Uploaded</th>
+                    <th className="py-2 pl-4 text-left font-medium">Quality</th>
                     <th className="py-2 pl-4 text-left font-medium">Summarized</th>
                   </tr>
                 </thead>
@@ -984,6 +1020,8 @@ export default function NewsDatabasePage() {
                   {filteredArticles.map((article) => {
                     const { title, keyPoints, actions, tickers, ongoingActions, ongoingTickers } =
                       parseArticleData(article);
+                    const { tag: qualityTag, note: qualityNote } = getArticleQuality(article);
+                    const storageDecision = normalizeTagValue(article.storageDecision);
                     const isOpen = openId === article.id;
                     const displayName = shortenFilename(article.originalFilename);
                     const showOngoing = ongoingOpen[article.id] ?? false;
@@ -1022,6 +1060,23 @@ export default function NewsDatabasePage() {
                         </td>
                         <td className="py-2 px-4 align-top text-neutral-300">
                           {formatDateTime(article.uploadedAt)}
+                        </td>
+                        <td className="py-2 pl-4 align-top">
+                          {qualityTag ? (
+                            <span
+                              className={`inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-medium ${
+                                qualityTag === "Error"
+                                  ? "border-red-500/70 bg-red-500/10 text-red-100"
+                                  : "border-emerald-500/70 bg-emerald-500/10 text-emerald-100"
+                              }`}
+                            >
+                              {qualityTag}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-neutral-500">
+                              {article.hasSummary ? "Good" : "Pending"}
+                            </span>
+                          )}
                         </td>
                         <td className="py-2 pl-4 align-top text-neutral-300">
                           {article.hasSummary ? "Yes" : "No"}
@@ -1069,6 +1124,37 @@ export default function NewsDatabasePage() {
                                     </span>{" "}
                                     {formatDateTime(article.summarizedAt)}
                                   </p>
+                                )}
+                              </div>
+
+                              <div className="space-y-2">
+                                <div className="flex flex-wrap gap-2 text-[11px] text-neutral-200">
+                                  {storageDecision && (
+                                    <span className="inline-flex items-center rounded-full border border-neutral-600 bg-neutral-900/60 px-3 py-1 font-medium">
+                                      Storage: {storageDecision}
+                                    </span>
+                                  )}
+                                  {qualityTag && (
+                                    <span
+                                      className={`inline-flex items-center rounded-full border px-3 py-1 font-medium ${
+                                        qualityTag === "Error"
+                                          ? "border-red-500/70 bg-red-500/10 text-red-100"
+                                          : "border-emerald-500/70 bg-emerald-500/10 text-emerald-100"
+                                      }`}
+                                    >
+                                      Quality: {qualityTag}
+                                    </span>
+                                  )}
+                                  {!qualityTag && !article.hasSummary && (
+                                    <span className="inline-flex items-center rounded-full border border-neutral-600 bg-neutral-900/60 px-3 py-1 font-medium text-neutral-300">
+                                      Quality: Pending
+                                    </span>
+                                  )}
+                                </div>
+                                {qualityTag === "Error" && qualityNote && (
+                                  <div className="rounded-lg border border-red-600/60 bg-red-900/40 px-3 py-2 text-xs text-red-100">
+                                    {qualityNote}
+                                  </div>
                                 )}
                               </div>
 

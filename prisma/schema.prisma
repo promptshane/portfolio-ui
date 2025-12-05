@@ -29,6 +29,7 @@ model User {
   // User UI preferences
   colorPalette   ColorPalette @default(classic)
   verifiedEmailsJson String?
+  newsEmailSelectionsJson String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -96,6 +97,10 @@ model NewsArticle {
   keyPointsJson    String?
   actionsJson      String?
   tickersJson      String?
+  sourceEmail      String?
+  storageDecision  String?
+  qualityTag       String?
+  qualityNote      String?
   summarizedAt     DateTime?
   qaHistoryJson    String?
   discountJson     String?
