@@ -504,8 +504,8 @@ export default function NewsPage() {
         credentials: "include",
         body: JSON.stringify({
           senders: verifiedSenders,
-          lookbackDays: 7,
-          maxEmails: 100,
+          lookbackDays: 2,
+          maxEmails: 20,
         }),
       });
       const ingestData = await ingestRes.json().catch(() => ({}));

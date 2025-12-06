@@ -5,8 +5,8 @@ import type { OAuth2Client } from "google-auth-library";
 import { addPdfFromBuffer, filenameExistsAndValid } from "./store";
 import { renderHtmlToPdf, wrapPlainTextAsHtml } from "./emailPdf";
 
-const DEFAULT_LOOKBACK_DAYS = 7;
-const DEFAULT_MAX_EMAILS = 100;
+const DEFAULT_LOOKBACK_DAYS = 2;
+const DEFAULT_MAX_EMAILS = 20;
 const MAX_LOOKBACK_DAYS = 365;
 const MAX_EMAIL_FETCH = 2000;
 

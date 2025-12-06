@@ -258,8 +258,8 @@ export default function NewsDatabasePage() {
   const [info, setInfo] = useState<string | null>(null);
   const [fileInputKey, setFileInputKey] = useState<number>(0);
   const [emailSenders, setEmailSenders] = useState<string>("");
-  const [emailLookbackDays, setEmailLookbackDays] = useState<number>(7);
-  const [emailMaxEmails, setEmailMaxEmails] = useState<number>(100);
+  const [emailLookbackDays, setEmailLookbackDays] = useState<number>(2);
+  const [emailMaxEmails, setEmailMaxEmails] = useState<number>(20);
   const [emailUnreadOnly, setEmailUnreadOnly] = useState<boolean>(false);
   const [loadingEmails, setLoadingEmails] = useState<boolean>(false);
   const [emailStatus, setEmailStatus] = useState<string | null>(null);

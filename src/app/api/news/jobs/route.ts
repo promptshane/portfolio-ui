@@ -44,8 +44,8 @@ export async function POST(req: NextRequest) {
 
   try {
     if (type === "refresh") {
-      const lookbackDays = Number(body?.lookbackDays) || 7;
-      const maxEmails = Number(body?.maxEmails) || 100;
+      const lookbackDays = Number(body?.lookbackDays) || 2;
+      const maxEmails = Number(body?.maxEmails) || 20;
       const job = await enqueueRefreshJob({
         userId: uid,
         lookbackDays,
