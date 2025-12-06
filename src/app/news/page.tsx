@@ -31,8 +31,7 @@ type RepostDraft = {
   mode: "create" | "edit";
 };
 
-const PROCESSING_PATTERN = [3, 2, 1, 0] as const;
-const LOADING_STATES = ["Loading...", "Loading..", "Loading.", "Loading"] as const;
+const LOADING_DOTS = [".", "..", "..."] as const;
 
 export default function NewsPage() {
   const router = useRouter();
@@ -62,7 +61,7 @@ export default function NewsPage() {
   const [repostDraft, setRepostDraft] = useState<RepostDraft | null>(
     null
   );
-  const { activeJob, jobRunning, refreshJobs, setPolling } = useNewsJobs({ pollIntervalMs: 4000 });
+  const { jobs, jobRunning, refreshJobs, setPolling } = useNewsJobs({ pollIntervalMs: 1500 });
   const [refreshBusy, setRefreshBusy] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
@@ -70,21 +69,84 @@ export default function NewsPage() {
   const actionButtonClass =
     "inline-flex items-center rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-sm font-medium text-neutral-100 hover:border-[var(--highlight-400)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--highlight-400)]";
 
-  const [processingStep, setProcessingStep] = useState(0);
-  const loadingActive = refreshBusy || jobRunning;
-  const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
   const [refreshPhaseActive, setRefreshPhaseActive] = useState(false);
+  const [loadingFrame, setLoadingFrame] = useState(0);
+  const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
+  const [expectedSummaryTotal, setExpectedSummaryTotal] = useState<number | null>(null);
+  const [refreshProgressCompleted, setRefreshProgressCompleted] = useState(0);
+  const [refreshJobId, setRefreshJobId] = useState<number | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [refreshFinished, setRefreshFinished] = useState(true);
+  const completionTimerRef = useRef<number | null>(null);
+  const refreshCancelledRef = useRef(false);
+  const progressFlashTimerRef = useRef<number | null>(null);
+  const [progressFlash, setProgressFlash] = useState<string | null>(null);
+  const lastJobCompletedRef = useRef(0);
+  const lastProgressTextRef = useRef<string | null>(null);
+  const loadingActive = refreshBusy || (!refreshFinished && (refreshPhaseActive || Boolean(refreshJobId)));
+
+  const clearCompletionTimer = useCallback(() => {
+    if (completionTimerRef.current) {
+      window.clearTimeout(completionTimerRef.current);
+      completionTimerRef.current = null;
+    }
+  }, []);
+
+  const clearProgressFlash = useCallback(() => {
+    if (progressFlashTimerRef.current) {
+      window.clearTimeout(progressFlashTimerRef.current);
+      progressFlashTimerRef.current = null;
+    }
+    setProgressFlash(null);
+  }, []);
+
+  const showProgressFlash = useCallback((text: string, durationMs = 5000) => {
+    setProgressFlash(text);
+    if (progressFlashTimerRef.current) {
+      window.clearTimeout(progressFlashTimerRef.current);
+    }
+    progressFlashTimerRef.current = window.setTimeout(() => {
+      setProgressFlash(null);
+      progressFlashTimerRef.current = null;
+    }, durationMs);
+  }, []);
+
+  const resetRefreshPhase = useCallback(() => {
+    clearCompletionTimer();
+    clearProgressFlash();
+    refreshCancelledRef.current = false;
+    setRefreshPhaseActive(false);
+    setRefreshStatus(null);
+    setExpectedSummaryTotal(null);
+    setRefreshProgressCompleted(0);
+    setRefreshJobId(null);
+    setCancelBusy(false);
+    setRefreshFinished(true);
+    lastJobCompletedRef.current = 0;
+    lastProgressTextRef.current = null;
+  }, [clearCompletionTimer, clearProgressFlash]);
+
+  const scheduleRefreshReset = useCallback(
+    (delayMs = 5000) => {
+      clearCompletionTimer();
+      completionTimerRef.current = window.setTimeout(() => {
+        resetRefreshPhase();
+      }, delayMs);
+    },
+    [clearCompletionTimer, resetRefreshPhase]
+  );
 
   useEffect(() => {
-    if (!loadingActive) {
-      setProcessingStep(0);
+    const shouldAnimate = loadingActive || (refreshPhaseActive && !refreshFinished);
+    if (!shouldAnimate) {
+      setLoadingFrame(0);
       return;
     }
     const interval = window.setInterval(() => {
-      setProcessingStep((prev) => (prev + 1) % PROCESSING_PATTERN.length);
+      setLoadingFrame((prev) => (prev + 1) % LOADING_DOTS.length);
     }, 450);
     return () => window.clearInterval(interval);
-  }, [loadingActive]);
+  }, [loadingActive, refreshPhaseActive, refreshFinished]);
 
   const loadArticles = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -123,8 +185,8 @@ export default function NewsPage() {
   }, [refreshJobs]);
 
   useEffect(() => {
-    setPolling(jobRunning);
-  }, [jobRunning, setPolling]);
+    setPolling(jobRunning || Boolean(refreshJobId));
+  }, [jobRunning, refreshJobId, setPolling]);
 
   useEffect(() => {
     let cancelled = false;
@@ -408,10 +470,26 @@ export default function NewsPage() {
     [refreshJobs]
   );
 
+  const fetchUnsummarizedIds = useCallback(async (): Promise<string[]> => {
+    try {
+      const res = await fetch("/api/news/articles", { cache: "no-store", credentials: "include" });
+      const data = (await res.json().catch(() => ({}))) as { articles?: ApiArticle[] };
+      if (!Array.isArray(data?.articles)) return [];
+      return data.articles
+        .filter((a) => !a.hasSummary)
+        .map((a) => String(a.id))
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  }, []);
+
   async function handleRefreshNews() {
-    if (refreshBusy || jobRunning) return;
+    if (refreshBusy || jobRunning || refreshPhaseActive) return;
     setRefreshError(null);
-    setRefreshStatus("Loading…");
+    resetRefreshPhase();
+    setRefreshFinished(false);
+    refreshCancelledRef.current = false;
     setRefreshPhaseActive(true);
     setRefreshBusy(true);
     try {
@@ -462,29 +540,66 @@ export default function NewsPage() {
       const statusMessage = `Loaded ${filesInserted} file${filesInserted === 1 ? "" : "s"} (${pdfUploads} PDF)${detailLabel} from ${processed} email${processed === 1 ? "" : "s"}. Skipped ${duplicates} duplicate${duplicates === 1 ? "" : "s"}.`;
       setRefreshStatus(statusMessage);
 
-      if (createdIds.length > 0) {
-        await startSummarizeJob(createdIds);
-        setRefreshStatus(
-          `${statusMessage} Summarizing ${createdIds.length} new PDF${createdIds.length === 1 ? "" : "s"}…`
-        );
+      if (refreshCancelledRef.current) {
+        await loadArticles({ silent: true });
+        setRefreshFinished(true);
+        scheduleRefreshReset(1000);
+        return;
+      }
+
+      const unsummarizedIds = await fetchUnsummarizedIds();
+      const summaryTargets = Array.from(new Set([...unsummarizedIds, ...createdIds]));
+
+      if (summaryTargets.length > 0) {
+        setExpectedSummaryTotal(summaryTargets.length);
+        setRefreshProgressCompleted(0);
+        const initialLabel = `(${0}/${summaryTargets.length}) Articles Summarized`;
+        lastProgressTextRef.current = initialLabel;
+        showProgressFlash(initialLabel);
+        const job = await startSummarizeJob(summaryTargets);
+        const jobId =
+          job && typeof (job as any).id !== "undefined" && (job as any).id !== null
+            ? Number((job as any).id)
+            : null;
+        if (jobId && !Number.isNaN(jobId)) {
+          setRefreshJobId(jobId);
+        }
       } else {
-        setRefreshStatus("All Articles Summarized");
-        setTimeout(() => {
-          setRefreshStatus(null);
-          setRefreshPhaseActive(false);
-        }, 5000);
+        setRefreshStatus(statusMessage);
+        setRefreshFinished(true);
+        scheduleRefreshReset(5000);
       }
 
       await loadArticles({ silent: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to refresh.";
       setRefreshError(message);
-      setRefreshStatus(null);
-      setRefreshPhaseActive(false);
+      setRefreshFinished(true);
+      scheduleRefreshReset(3000);
     } finally {
       setRefreshBusy(false);
     }
   }
+
+  const handleCancelRefresh = useCallback(async () => {
+    if (!refreshPhaseActive && !refreshJobId) return;
+    refreshCancelledRef.current = true;
+    setCancelBusy(true);
+    setRefreshError(null);
+    try {
+      await fetch("/api/news/jobs", {
+        method: "DELETE",
+        credentials: "include",
+      });
+      setRefreshStatus("Cancelled");
+    } catch (err: any) {
+      setRefreshError(err?.message || "Failed to cancel.");
+    } finally {
+      setCancelBusy(false);
+      setRefreshFinished(true);
+      scheduleRefreshReset(1000);
+    }
+  }, [refreshJobId, refreshPhaseActive, scheduleRefreshReset]);
 
   function updateQaInput(id: string, value: string) {
     setQaById((prev) => {
@@ -921,50 +1036,89 @@ export default function NewsPage() {
   const timeframeTotal = filteredItems.length;
   const timeframeLabels: Record<TimeframeOption, string> = {
     "1D": "Today",
-    "1W": "This Week",
-    "1M": "This Month",
-    "1Y": "This Year",
+    "1W": "this Week",
+    "1M": "this Month",
+    "1Y": "this Year",
     "All": "All Time",
   };
   const timeframeLabel = timeframeLabels[timeframe];
-  const refreshButtonLabel = loadingActive
-    ? LOADING_STATES[processingStep % LOADING_STATES.length]
-    : "Refresh";
+  const loadingDots = LOADING_DOTS[loadingFrame % LOADING_DOTS.length];
+  const refreshJob =
+    refreshJobId != null ? jobs.find((j) => j.id === refreshJobId) ?? null : null;
+  const refreshJobRunning = Boolean(
+    refreshJob && (refreshJob.status === "pending" || refreshJob.status === "running")
+  );
+  const refreshActive =
+    (!refreshFinished && (refreshPhaseActive || refreshBusy || refreshJobRunning || Boolean(refreshJobId))) ||
+    cancelBusy;
+  const refreshButtonLabel = refreshActive ? (cancelBusy ? "Cancelling..." : "Cancel") : "Refresh";
 
-  const loadingDots = LOADING_STATES[processingStep % LOADING_STATES.length];
-
-  const summarizingJob =
-    activeJob && (activeJob.type === "summarize" || activeJob.type === "resummarize");
-  const summarizingStatus = (() => {
-    if (!summarizingJob) return null;
-    const total = Math.max(activeJob?.total ?? 0, 0);
-    const completed = Math.max(activeJob?.completed ?? 0, 0);
-    if (activeJob?.status === "completed") return "All Articles Summarized";
-    if (total > 0) {
-      if (completed >= total) return "All Articles Summarized";
-      if (completed > 0) return `(${completed}/${total}) Articles Summarized`;
-      return `Summarizing ${total} Articles`;
-    }
-    return "Summarizing Articles";
-  })();
 
   useEffect(() => {
     if (!refreshPhaseActive) return;
-    if (summarizingJob && activeJob?.status === "completed") {
-      setRefreshStatus("All Articles Summarized");
-      const id = setTimeout(() => {
-        setRefreshStatus(null);
-        setRefreshPhaseActive(false);
-      }, 5000);
-      return () => clearTimeout(id);
-    }
-    return;
-  }, [summarizingJob, activeJob, refreshPhaseActive]);
+    if (!refreshJob) return;
 
-  const defaultSubtitle = `(${timeframeReadCount}/${timeframeTotal} Articles read for ${timeframeLabel})`;
-  const computedSubtitle =
-    (refreshPhaseActive && ((refreshBusy && !activeJob && `Loading${loadingDots}`) || summarizingStatus || refreshStatus || refreshError)) ||
-    defaultSubtitle;
+    if (refreshJob.total > 0) {
+      setExpectedSummaryTotal(refreshJob.total);
+    }
+
+    const completed = Math.max(refreshJob.completed ?? 0, 0);
+    const prevCompleted = lastJobCompletedRef.current;
+    setRefreshProgressCompleted(completed);
+
+    const total = refreshJob.total && refreshJob.total > 0 ? refreshJob.total : expectedSummaryTotal ?? null;
+    if (total && total > 0) {
+      const done = Math.min(completed, total);
+      const label = `(${done}/${total}) Articles Summarized`;
+      if (label !== lastProgressTextRef.current) {
+        lastProgressTextRef.current = label;
+        showProgressFlash(label);
+      }
+    }
+
+    if (completed > prevCompleted) {
+      lastJobCompletedRef.current = completed;
+      void loadArticles({ silent: true });
+      void refreshJobs();
+    } else {
+      lastJobCompletedRef.current = completed;
+    }
+
+    const active = refreshJob.status === "pending" || refreshJob.status === "running";
+    if (!active) {
+      if (refreshJob.lastError) {
+        setRefreshError((prev) => prev ?? refreshJob.lastError);
+      }
+      setRefreshFinished(true);
+      setRefreshJobId(null);
+      scheduleRefreshReset(5000);
+    }
+  }, [refreshJob, refreshPhaseActive, scheduleRefreshReset, expectedSummaryTotal, showProgressFlash, loadArticles]);
+
+  useEffect(() => {
+    return () => {
+      clearCompletionTimer();
+      clearProgressFlash();
+    };
+  }, [clearCompletionTimer, clearProgressFlash]);
+
+  const defaultSubtitle = `(${timeframeReadCount}/${timeframeTotal}) Articles Read ${timeframeLabel}`;
+  const progressTotal =
+    refreshJob && refreshJob.total > 0
+      ? refreshJob.total
+      : expectedSummaryTotal && expectedSummaryTotal > 0
+      ? expectedSummaryTotal
+      : null;
+  const progressCompleted = refreshJob
+    ? Math.max(refreshJob.completed ?? 0, refreshProgressCompleted ?? 0)
+    : refreshProgressCompleted ?? 0;
+  const refreshSubtitle = (() => {
+    if (!refreshPhaseActive) return null;
+    if (refreshError) return refreshError;
+    if (progressFlash) return progressFlash;
+    return `Loading${loadingDots}`;
+  })();
+  const computedSubtitle = refreshSubtitle ?? defaultSubtitle;
 
   return (
     <main className="min-h-screen bg-neutral-900 text-white px-6 py-8">
@@ -973,20 +1127,6 @@ export default function NewsPage() {
         subtitle={computedSubtitle}
         rightSlot={
           <div className="flex items-start gap-3">
-            {/* Refresh button + status */}
-            <button
-              type="button"
-              onClick={handleRefreshNews}
-              disabled={refreshBusy || jobRunning}
-              className={`${actionButtonClass} ${
-                jobRunning
-                  ? "border-[var(--highlight-400)] text-[var(--highlight-100)]"
-                  : ""
-              }`}
-            >
-              {refreshButtonLabel}
-            </button>
-
             {/* Sort dropdown */}
             <div className="relative" ref={sortDropdownRef}>
               <button
@@ -1120,6 +1260,20 @@ export default function NewsPage() {
                 </div>
               )}
             </div>
+
+            {/* Refresh / Cancel button */}
+            <button
+              type="button"
+              onClick={refreshActive ? handleCancelRefresh : handleRefreshNews}
+              disabled={cancelBusy}
+              className={`${actionButtonClass} ${
+                refreshActive
+                  ? "border-red-500 text-red-100 bg-transparent hover:border-red-400"
+                  : ""
+              }`}
+            >
+              {refreshButtonLabel}
+            </button>
           </div>
         }
       />

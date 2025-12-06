@@ -295,6 +295,61 @@ export default function NewsDatabasePage() {
   }, [jobRunning, setPolling]);
 
   const jobWasRunningRef = useRef(jobRunning);
+  const jobStatusTimerRef = useRef<number | null>(null);
+  const [jobStatusText, setJobStatusText] = useState<string | null>(null);
+
+  const clearJobStatusTimer = useCallback(() => {
+    if (jobStatusTimerRef.current) {
+      window.clearTimeout(jobStatusTimerRef.current);
+      jobStatusTimerRef.current = null;
+    }
+  }, []);
+
+  const formatJobStatus = useCallback(() => {
+    if (!activeJob) return null;
+    const verb =
+      activeJob.type === "refresh"
+        ? "Refreshing"
+        : activeJob.type === "resummarize"
+        ? "Resummarizing"
+        : "Summarizing";
+    if (activeJob.total && activeJob.total > 0) {
+      const done = Math.min(Math.max(activeJob.completed ?? 0, 0), activeJob.total);
+      return `${verb}: (${done}/${activeJob.total}) Articles Summarized`;
+    }
+    if (activeJob.summary) return `${verb}: ${activeJob.summary}`;
+    return `${verb}: In progress`;
+  }, [activeJob]);
+
+  useEffect(() => {
+    if (jobRunning && activeJob) {
+      clearJobStatusTimer();
+      setJobStatusText(formatJobStatus());
+      return;
+    }
+
+    if (!jobRunning && activeJob) {
+      setJobStatusText(formatJobStatus());
+      clearJobStatusTimer();
+      jobStatusTimerRef.current = window.setTimeout(() => {
+        setJobStatusText(null);
+        jobStatusTimerRef.current = null;
+      }, 5000);
+      return;
+    }
+
+    if (!jobRunning) {
+      clearJobStatusTimer();
+      setJobStatusText(null);
+    }
+  }, [activeJob, jobRunning, clearJobStatusTimer, formatJobStatus]);
+
+  useEffect(() => {
+    return () => {
+      clearJobStatusTimer();
+    };
+  }, [clearJobStatusTimer]);
+
   useEffect(() => {
     if (jobWasRunningRef.current && !jobRunning) {
       void loadArticles();
@@ -669,20 +724,6 @@ export default function NewsDatabasePage() {
     resummarizingSelected ||
     deletingSelected ||
     (jobRunning && activeJob?.type !== "refresh");
-
-  const jobStatusText = useMemo(() => {
-    if (!activeJob) return null;
-    const verb =
-      activeJob.type === "refresh"
-        ? "Refreshing"
-        : activeJob.type === "resummarize"
-        ? "Resummarizing"
-        : "Summarizing";
-    const detail =
-      activeJob.summary ||
-      `${activeJob.completed}/${Math.max(activeJob.total, 0)} Articles Processed`;
-    return `${verb}: ${detail}`;
-  }, [activeJob]);
 
   return (
     <main className="min-h-screen bg-neutral-900 text-white px-6 py-8">

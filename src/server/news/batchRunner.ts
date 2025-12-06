@@ -79,6 +79,26 @@ function parseCriteria<T>(json: string | null): T {
   }
 }
 
+async function isJobCancelled(jobId: number) {
+  const current = await prisma.newsBatchJob.findUnique({
+    where: { id: jobId },
+    select: { status: true },
+  });
+  if (!current) return true;
+  return !ACTIVE_STATUSES.includes(current.status);
+}
+
+async function markCancelled(jobId: number, message = "Cancelled by user") {
+  await prisma.newsBatchJob.updateMany({
+    where: { id: jobId, status: { in: ACTIVE_STATUSES } },
+    data: {
+      status: "failed",
+      summary: message,
+      lastError: message,
+    },
+  });
+}
+
 async function processSummarizeJob(job: NewsBatchJob) {
   const criteria = parseCriteria<SummarizeCriteria>(job.criteriaJson);
   const articleIds = Array.from(new Set(criteria.articleIds ?? [])).filter(Boolean);
@@ -101,6 +121,13 @@ async function processSummarizeJob(job: NewsBatchJob) {
   let lastError: string | null = null;
   let deleted = 0;
   let missing = 0;
+  let cancelled = false;
+
+  const checkCancelled = async () => {
+    if (cancelled) return true;
+    cancelled = await isJobCancelled(job.id);
+    return cancelled;
+  };
 
   const progressSummary = () => {
     const extras: string[] = [];
@@ -113,6 +140,7 @@ async function processSummarizeJob(job: NewsBatchJob) {
   let cursor = 0;
   const worker = async () => {
     while (cursor < articleIds.length) {
+      if (await checkCancelled()) return;
       const index = cursor++;
       const articleId = articleIds[index];
       try {
@@ -134,11 +162,16 @@ async function processSummarizeJob(job: NewsBatchJob) {
           lastError,
         },
       });
+      if (await checkCancelled()) return;
     }
   };
 
   const workerCount = Math.min(SUMMARY_CONCURRENCY, articleIds.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  if (cancelled) {
+    return markCancelled(job.id);
+  }
 
   const extras: string[] = [];
   if (deleted) extras.push(`${deleted} deleted`);
@@ -164,7 +197,13 @@ async function processRefreshJob(job: NewsBatchJob) {
     data: { summary: "Finding new articles…", total: 0, completed: 0 },
   });
 
+  const checkCancelled = async () => isJobCancelled(job.id);
+
   try {
+    if (await checkCancelled()) {
+      return markCancelled(job.id);
+    }
+
     const summary = await ingestEmailsFromGmail({
       senders: criteria.senders,
       lookbackDays: criteria.lookbackDays,
@@ -199,6 +238,9 @@ async function processRefreshJob(job: NewsBatchJob) {
     });
 
     if (!total) {
+      if (await checkCancelled()) {
+        return markCancelled(job.id);
+      }
       return markCompleted(job.id, "No new articles to process.");
     }
 
@@ -206,6 +248,7 @@ async function processRefreshJob(job: NewsBatchJob) {
     let lastError: string | null = null;
     let deleted = 0;
     let missing = 0;
+    let cancelled = false;
 
     const progressSummary = () => {
       const extras: string[] = [];
@@ -218,6 +261,11 @@ async function processRefreshJob(job: NewsBatchJob) {
     let cursor = 0;
     const worker = async () => {
       while (cursor < articleIds.length) {
+        if (cancelled) return;
+        if (await checkCancelled()) {
+          cancelled = true;
+          return;
+        }
         const index = cursor++;
         const articleId = articleIds[index];
         try {
@@ -234,16 +282,21 @@ async function processRefreshJob(job: NewsBatchJob) {
         await prisma.newsBatchJob.update({
           where: { id: job.id },
           data: {
-            completed,
-            summary: progressSummary(),
-            lastError,
-          },
-        });
+          completed,
+          summary: progressSummary(),
+          lastError,
+        },
+      });
+        if (cancelled) return;
       }
     };
 
     const workerCount = Math.min(SUMMARY_CONCURRENCY, articleIds.length);
     await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+    if (cancelled || (await checkCancelled())) {
+      return markCancelled(job.id);
+    }
 
     const extras: string[] = [];
     if (deleted) extras.push(`${deleted} deleted`);
@@ -298,13 +351,13 @@ resumePendingJobsOnce().catch((err) => {
   console.error("Failed to resume pending news jobs", err);
 });
 
-async function cancelActiveJob(userId: number) {
+export async function cancelActiveJob(userId: number) {
   await prisma.newsBatchJob.updateMany({
     where: { userId, status: { in: ACTIVE_STATUSES } },
     data: {
       status: "failed",
-      summary: "Cancelled by new request",
-      lastError: "Replaced by new job request",
+      summary: "Cancelled by user request",
+      lastError: "Cancelled by user request",
     },
   });
 }

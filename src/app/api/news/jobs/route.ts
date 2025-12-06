@@ -5,6 +5,7 @@ import {
   enqueueRefreshJob,
   enqueueSummarizeJob,
   getJobsForUser,
+  cancelActiveJob,
 } from "@/server/news/batchRunner";
 
 function getUserId(session: unknown): number | null {
@@ -70,6 +71,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unsupported job type" }, { status: 400 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to start job.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+export async function DELETE() {
+  const session = await getServerSession(authOptions);
+  const uid = getUserId(session);
+  if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  try {
+    await cancelActiveJob(uid);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to cancel job.";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
